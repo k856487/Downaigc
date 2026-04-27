@@ -1,0 +1,2255 @@
+/* ---------- App 主题（light/dark/system） ---------- */
+:root {
+  --bg-page:
+    radial-gradient(ellipse 82% 66% at 8% 8%, rgba(175, 109, 255, 0.24), transparent 64%),
+    radial-gradient(ellipse 82% 66% at 92% 92%, rgba(120, 190, 255, 0.24), transparent 64%),
+    linear-gradient(180deg, #fdf6ff 0%, #fff3f7 100%);
+  --bg-auth-page:
+    radial-gradient(ellipse 82% 66% at 8% 8%, rgba(175, 109, 255, 0.24), transparent 64%),
+    radial-gradient(ellipse 82% 66% at 92% 92%, rgba(120, 190, 255, 0.24), transparent 64%),
+    linear-gradient(180deg, #fdf6ff 0%, #fff3f7 100%);
+  --bg-surface: #ffffff;
+  --bg-surface-2: #fafbfc;
+
+  --border-subtle: #e4e6eb;
+  --border-strong: #000000;
+
+  --text-primary: #111827;
+  --text-secondary: #64748b;
+
+  /* Input：默认（浅色） */
+  --input-bg: #ffffff;
+  --input-border: #000000;
+  --input-shadow-color: #000000;
+  --input-placeholder: rgba(100, 116, 139, 0.95);
+
+  /* AdCarousel：卡片灰底 + 字色（根据主题切换） */
+  --ad-card-bg-1: linear-gradient(135deg, #EEF3FF 0%, #FFFFFF 60%);
+  --ad-card-bg-2: linear-gradient(135deg, #F0F9FF 0%, #FFFFFF 55%);
+  --ad-card-bg-3: linear-gradient(135deg, #F5F6F8 0%, #FFFFFF 55%);
+  --ad-card-title: #111827;
+  --ad-card-desc: rgba(17, 24, 39, 0.7);
+}
+
+html.app-theme-dark {
+  --bg-page: #1a1a1a;
+  --bg-auth-page: var(--bg-page);
+  /* 让 Card/内容容器更偏灰而不是深蓝 */
+  --bg-surface: #2a2a2a;
+  --bg-surface-2: #242424;
+
+  --border-subtle: #3a3a3a;
+  --border-strong: #e5e7eb;
+
+  --text-primary: #e5e5e5;
+  --text-secondary: #a6a6a6;
+
+  /* Input：暗色时不要再使用黑色边框/阴影 */
+  --input-bg: var(--bg-surface-2);
+  --input-border: var(--border-subtle);
+  --input-shadow-color: var(--border-subtle);
+  --input-placeholder: rgba(166, 166, 166, 0.85);
+
+  /* AdCarousel：暗色卡片改为灰底 + 白字 */
+  --ad-card-bg-1: linear-gradient(135deg, #2a2a2a 0%, #1f1f1f 60%);
+  --ad-card-bg-2: linear-gradient(135deg, #2b2b2b 0%, #1f1f1f 55%);
+  --ad-card-bg-3: linear-gradient(135deg, #2a2a2a 0%, #202020 55%);
+  --ad-card-title: #ffffff;
+  --ad-card-desc: rgba(255, 255, 255, 0.72);
+
+  /* 滚动条：轨道黑色（避免侧栏等仍为系统白槽） */
+  --scrollbar-track: #000000;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.22);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.38);
+  color-scheme: dark;
+}
+
+/* 暗色：自定义滚动条（Chrome / Edge / Safari）；Firefox 用 scrollbar-color */
+html.app-theme-dark,
+html.app-theme-dark * {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: thin;
+}
+
+html.app-theme-dark *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+html.app-theme-dark *::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 8px;
+}
+
+html.app-theme-dark *::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 8px;
+  border: 2px solid var(--scrollbar-track);
+}
+
+html.app-theme-dark *::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+html.app-theme-dark *::-webkit-scrollbar-corner {
+  background: var(--scrollbar-track);
+}
+
+/* 暗色下：强制把 AntD Card 的标题区/内容区背景改为灰底 */
+html.app-theme-dark .ant-card,
+html.app-theme-dark .ant-card-head,
+html.app-theme-dark .ant-card-body {
+  background: var(--bg-surface) !important;
+}
+
+html.app-theme-dark .ant-card-head {
+  border-bottom: 1px solid var(--border-subtle) !important;
+}
+
+/* 暗色侧栏选中态：把 AntD 默认蓝色选中改成灰色 */
+html.app-theme-dark .ant-menu-light .ant-menu-item-selected,
+html.app-theme-dark .ant-menu-light .ant-menu-item-active {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: var(--text-primary) !important;
+}
+
+html.app-theme-dark .ant-menu-light .ant-menu-item-selected::after,
+html.app-theme-dark .ant-menu-light .ant-menu-item-active::after {
+  border-left-color: rgba(255, 255, 255, 0.22) !important;
+  background: rgba(255, 255, 255, 0.22) !important;
+}
+
+/* 登录页：注册/登录方式弹层在暗色下保持灰底 */
+html.app-theme-dark .login-register-panel {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-subtle) !important;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35) !important;
+}
+
+html.app-theme-dark .login-register-panel-desc {
+  color: var(--text-secondary) !important;
+}
+
+html.app-theme-dark .login-register-wrapper .icon {
+  background: rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.25) !important;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui,
+    -system-ui, "Segoe UI", sans-serif;
+  background: var(--bg-page);
+  color: var(--text-primary);
+}
+
+/* 浅色主题：全站卡片更圆更柔和，统一“苹果风”质感 */
+html.app-theme-light .ant-card {
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow:
+    0 10px 30px rgba(15, 23, 42, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.9) inset;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* 登录/注册主卡片：更强的毛玻璃和柔阴影 */
+.auth-main-card.ant-card {
+  border-radius: 28px !important;
+  border: 1px solid rgba(255, 255, 255, 0.92) !important;
+  background: linear-gradient(
+      165deg,
+      rgba(255, 255, 255, 0.86) 0%,
+      rgba(255, 255, 255, 0.64) 62%,
+      rgba(255, 255, 255, 0.58) 100%
+    ) !important;
+  box-shadow:
+    0 30px 70px rgba(15, 23, 42, 0.2),
+    0 2px 0 rgba(255, 255, 255, 0.96) inset !important;
+  backdrop-filter: saturate(140%) blur(18px) !important;
+  -webkit-backdrop-filter: saturate(140%) blur(18px) !important;
+  overflow: visible;
+}
+
+.auth-main-card .ant-card-body {
+  border-radius: 28px !important;
+  background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.72) 0%,
+      rgba(255, 255, 255, 0.62) 100%
+    ) !important;
+  border: 1px solid rgba(255, 255, 255, 0.9) !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    0 10px 24px rgba(15, 23, 42, 0.08) !important;
+  overflow: visible;
+}
+
+.auth-main-card.login-card-exit {
+  animation: login-card-fly-out 360ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+@keyframes login-card-fly-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-18px) scale(0.985);
+    filter: blur(1px);
+  }
+}
+
+.login-avatar-glyph {
+  position: absolute;
+  inset: 0;
+  display: block;
+  will-change: transform, opacity;
+}
+
+.login-avatar-glyph--pop {
+  animation: login-avatar-pop-in 240ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.login-avatar-glyph--enter {
+  animation: login-avatar-rise-in 240ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+.login-avatar-glyph--steady {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  filter: blur(0);
+}
+
+.login-avatar-glyph--exit {
+  animation: login-avatar-fall-out 220ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes login-avatar-rise-in {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 12px)) scale(0.94);
+    filter: blur(1px);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes login-avatar-fall-out {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 10px)) scale(0.96);
+    filter: blur(1px);
+  }
+}
+
+.login-greeting-name {
+  display: inline-block;
+  will-change: transform, opacity, filter;
+}
+
+.login-greeting-name--enter {
+  animation: login-greeting-rise-in 220ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+.login-greeting-name--exit {
+  animation: login-greeting-fall-out 200ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.login-greeting-name--steady {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+
+.console-enter-stagger > * {
+  opacity: 0;
+  transform: translateY(-12px);
+  animation: console-item-rise-in 420ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+.console-enter-stagger > *:nth-child(1) {
+  animation-delay: 40ms;
+}
+
+.console-enter-stagger > *:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.console-enter-stagger > *:nth-child(3) {
+  animation-delay: 200ms;
+}
+
+.console-enter-stagger > *:nth-child(4) {
+  animation-delay: 280ms;
+}
+
+@keyframes console-item-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.header-user-avatar {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  flex: 0 0 32px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 8px 16px rgba(15, 23, 42, 0.14),
+    0 1px 0 rgba(255, 255, 255, 0.95) inset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  overflow: hidden;
+}
+
+.header-user-avatar__glyph {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+.header-user-avatar__glyph--pop {
+  animation: header-avatar-rise-in 220ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes header-avatar-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes login-avatar-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.avatar-glyph-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.console-stagger-item {
+  opacity: 0;
+  transform: translateY(-14px);
+  animation: console-item-rise-in 420ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+.console-stagger-item--1 {
+  animation-delay: 40ms;
+}
+
+.console-stagger-item--2 {
+  animation-delay: 130ms;
+}
+
+.console-stagger-item--3 {
+  animation-delay: 220ms;
+}
+
+.console-stagger-item--4 {
+  animation-delay: 310ms;
+}
+
+.login-avatar-action-btn {
+  position: relative;
+}
+
+.login-avatar-action-btn::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: -8px;
+  transform: translateY(0);
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.2;
+  color: #0f172a;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 10px;
+  padding: 5px 8px;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
+  z-index: 8;
+}
+
+.login-avatar-action-btn::before {
+  content: "";
+  position: absolute;
+  left: calc(100% + 4px);
+  top: 10px;
+  width: 8px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  border-left: 1px solid rgba(226, 232, 240, 0.95);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.95);
+  transform: rotate(45deg);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
+  z-index: 7;
+}
+
+.login-avatar-action-btn:hover::after,
+.login-avatar-action-btn:focus-visible::after {
+  opacity: 1;
+  transform: translateY(-2px);
+}
+
+.login-avatar-action-btn:hover::before,
+.login-avatar-action-btn:focus-visible::before {
+  opacity: 1;
+  transform: rotate(45deg) translateY(-1px);
+}
+
+@keyframes login-greeting-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(1px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes login-greeting-fall-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(1px);
+  }
+}
+
+html.app-theme-dark .auth-main-card.ant-card {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(35, 35, 35, 0.82);
+  box-shadow:
+    0 20px 46px rgba(0, 0, 0, 0.35),
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+html.app-theme-dark .auth-main-card .ant-card-body {
+  background: rgba(35, 35, 35, 0.78);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+}
+
+/* 按钮统一两档（主：磨砂黑；次：半透明白），并去掉光圈/发光层 */
+html.app-theme-light .ant-btn-primary,
+html.app-theme-light .galaxy-btn {
+  background: rgba(12, 12, 18, 0.92) !important;
+  border: 1px solid rgba(12, 12, 18, 0.92) !important;
+  color: #ffffff !important;
+  box-shadow:
+    0 8px 18px rgba(2, 6, 23, 0.16),
+    0 1px 0 rgba(255, 255, 255, 0.12) inset !important;
+}
+
+html.app-theme-light .ant-btn-default,
+html.app-theme-light .ant-btn-dashed,
+html.app-theme-light .ant-btn-text,
+html.app-theme-light .ant-btn-link {
+  background: rgba(255, 255, 255, 0.62) !important;
+  border: 1px solid rgba(255, 255, 255, 0.88) !important;
+  color: #0f172a !important;
+  box-shadow:
+    0 6px 14px rgba(15, 23, 42, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.9) inset !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.ant-btn {
+  border-radius: 12px !important;
+}
+
+.galaxy-btn {
+  border-radius: 12px !important;
+  box-shadow: 0 8px 18px rgba(2, 6, 23, 0.16) !important;
+}
+
+.galaxy-btn::before,
+.galaxy-btn__stars,
+.galaxy-btn__glow {
+  display: none !important;
+}
+
+/* 登录按钮：圆圈加载动画 */
+.login-circle-loading {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+  display: inline-block;
+  animation: login-circle-spin 0.75s linear infinite;
+}
+
+@keyframes login-circle-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 控制台左侧主导航：圆滑角 + 阴影（header 不加阴影） */
+.console-floating-header-icons {
+  position: fixed;
+  top: 10px;
+  right: 16px;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 154px;
+  height: 55px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.1);
+}
+
+.console-floating-header-icons .ant-space {
+  width: 100%;
+  height: 100%;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+html.app-theme-dark .console-floating-header-icons {
+  background: rgba(34, 34, 34, 0.75);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+}
+
+.console-main-sider.ant-layout-sider {
+  margin: 12px;
+  border-radius: 16px !important;
+  overflow: hidden !important;
+  clip-path: inset(0 round 16px);
+  border-right: 1px solid var(--border-subtle);
+  box-shadow:
+    0 10px 28px rgba(15, 23, 42, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.85) inset;
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.82) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  height: calc(100vh - 24px);
+  transition:
+    width 680ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    min-width 680ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    max-width 680ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    flex-basis 680ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    height 440ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.console-main-sider .ant-layout-sider-children {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  overflow: hidden;
+  transition: opacity 320ms ease;
+}
+
+.console-main-sider .console-side-menu {
+  margin-top: 34px;
+  transition:
+    opacity 680ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    transform 680ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  overflow: hidden;
+}
+
+.console-main-sider.ant-layout-sider-collapsed .console-side-menu {
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
+}
+
+.console-sider-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    right 680ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    top 680ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    color 220ms ease,
+    opacity 240ms ease;
+}
+
+.console-sider-toggle:hover,
+.console-sider-toggle:focus-visible {
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.console-main-sider.ant-layout-sider-collapsed .console-sider-toggle {
+  position: absolute;
+  top: 8px;
+  right: 16px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  border-radius: 10px !important;
+}
+
+/* 收起时宽度较窄，圆角稍减，避免视觉过重 */
+.console-main-sider.ant-layout-sider.ant-layout-sider-collapsed {
+  border-radius: 16px !important;
+  clip-path: inset(0 round 16px);
+  width: 50px !important;
+  min-width: 50px !important;
+  max-width: 50px !important;
+  height: 50px !important;
+  border: none !important;
+  background: rgba(255, 255, 255, 0.55) !important;
+  box-shadow:
+    0 10px 24px rgba(15, 23, 42, 0.12),
+    0 1px 0 rgba(255, 255, 255, 0.9) inset !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: auto;
+  transition:
+    width 680ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    min-width 680ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    max-width 680ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    flex-basis 680ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    height 440ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    background 680ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    box-shadow 680ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    opacity 320ms ease;
+  opacity: 0.45;
+}
+
+.console-main-sider.ant-layout-sider.ant-layout-sider-collapsed:hover {
+  background: rgba(255, 255, 255, 0.92) !important;
+  opacity: 1;
+}
+
+/* 收起后让侧栏悬浮，不占据左侧布局空间 */
+.console-main-layout {
+  position: relative;
+}
+
+.console-main-layout .console-main-sider.ant-layout-sider {
+  position: absolute !important;
+  left: 12px;
+  top: 12px;
+  margin: 0;
+  z-index: 20;
+}
+
+.console-content-shell {
+  margin-left: 244px;
+  margin-right: 0;
+  transition:
+    margin-left 760ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    margin-right 760ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.console-content-shell.console-content-shell--collapsed {
+  margin-left: 72px;
+  margin-right: 72px;
+}
+
+.console-main-sider.ant-layout-sider-collapsed .ant-layout-sider-children {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  margin: 0;
+  background: transparent;
+  border: none !important;
+  box-shadow: none;
+  pointer-events: auto;
+}
+
+/* 收起动画期间：禁用可能闪出的边线/伪元素描边 */
+.console-main-sider.ant-layout-sider-collapsed .ant-layout-sider-children::before,
+.console-main-sider.ant-layout-sider-collapsed .ant-layout-sider-children::after,
+.console-main-sider.ant-layout-sider-collapsed .console-side-menu,
+.console-main-sider.ant-layout-sider-collapsed .console-side-menu * {
+  border-color: transparent !important;
+  outline: none !important;
+}
+
+.console-main-sider.ant-layout-sider-collapsed .console-sider-toggle {
+  top: 9px;
+  right: 9px;
+  transform: none;
+}
+
+/* 暗色下保持对比度，避免毛玻璃发灰 */
+html.app-theme-dark .console-main-sider.ant-layout-sider {
+  background: rgba(34, 34, 34, 0.82) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.28),
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* 登录页：协议勾选与校验错误文案字号、行高、左侧缩进对齐 */
+.login-form-agreement .ant-checkbox-label {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.login-form-agreement .ant-form-item-explain-error {
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+  margin-top: 6px !important;
+  /* 与复选框文字左缘对齐：复选框宽度 + 间距（约 16 + 8） */
+  padding-left: 24px;
+  margin-inline-start: 0;
+}
+
+/* 统一输入框样式（替代 AntD 默认外观） */
+.input {
+  width: 100%;
+  padding: 0.875rem;
+  font-size: 1rem;
+  border: 1.5px solid var(--input-border);
+  border-radius: 0.5rem;
+  box-shadow: 2.5px 3px 0 var(--input-shadow-color);
+  outline: none;
+  transition: ease 0.25s;
+  background: var(--input-bg);
+  color: #111827;
+}
+
+.input::placeholder {
+  color: var(--input-placeholder);
+}
+
+.input:focus,
+.input.ant-input:focus,
+.input.ant-input-affix-wrapper-focused {
+  box-shadow: 5.5px 7px 0 var(--input-shadow-color);
+}
+
+/* AntD 校验错误态：强制保持与普通态一致的厚阴影 */
+.input.ant-input-status-error {
+  box-shadow: 2.5px 3px 0 var(--input-shadow-color) !important;
+  border-color: var(--input-border) !important;
+  color: #111827 !important;
+}
+
+.input.ant-input-status-error:focus {
+  box-shadow: 5.5px 7px 0 var(--input-shadow-color) !important;
+}
+
+/* AntD Input.Password：外层是 affix-wrapper（span） */
+.ant-input-affix-wrapper.input {
+  border: 1.5px solid var(--input-border) !important;
+  border-radius: 0.5rem !important;
+  box-shadow: 2.5px 3px 0 var(--input-shadow-color) !important;
+  transition: ease 0.25s !important;
+  background: var(--input-bg) !important;
+  color: #111827;
+}
+
+.ant-input-affix-wrapper.input:focus,
+.ant-input-affix-wrapper.input.ant-input-affix-wrapper-focused {
+  box-shadow: 5.5px 7px 0 var(--input-shadow-color) !important;
+}
+
+/* 密码框错误态：同样强制保持阴影 */
+.ant-input-affix-wrapper.input.ant-input-status-error {
+  box-shadow: 2.5px 3px 0 var(--input-shadow-color) !important;
+}
+
+.ant-input-affix-wrapper.input.ant-input-status-error:focus-within {
+  box-shadow: 5.5px 7px 0 var(--input-shadow-color) !important;
+}
+
+.ant-input-affix-wrapper.input input::placeholder {
+  color: var(--input-placeholder);
+}
+
+/* 登录卡片内输入：压制浏览器/状态导致的偏蓝字色 */
+.auth-main-card input.input,
+.auth-main-card .ant-input.input,
+.auth-main-card .ant-input-affix-wrapper.input input {
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827 !important;
+  caret-color: #111827;
+}
+
+.auth-main-card input.input:focus,
+.auth-main-card .ant-input.input:focus,
+.auth-main-card .ant-input-affix-wrapper.input input:focus {
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827 !important;
+}
+
+.auth-main-card input.input:-webkit-autofill,
+.auth-main-card input.input:-webkit-autofill:hover,
+.auth-main-card input.input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #111827 !important;
+  caret-color: #111827 !important;
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* 登录卡片内输入边框：统一纯黑 */
+.auth-main-card .input,
+.auth-main-card .ant-input-affix-wrapper.input {
+  border-color: #000000 !important;
+}
+
+.auth-main-card .input:focus,
+.auth-main-card .ant-input.input:focus,
+.auth-main-card .ant-input-affix-wrapper.input.ant-input-affix-wrapper-focused {
+  border-color: #000000 !important;
+}
+
+.auth-main-card .input.ant-input-status-error,
+.auth-main-card .ant-input-affix-wrapper.input.ant-input-status-error {
+  border-color: #000000 !important;
+}
+
+/* 厚阴影输入框：下方校验文案留出空间，避免阴影盖住文字 */
+.ant-form-item-with-help .ant-form-item-control-input-content > .input.ant-input,
+.ant-form-item-with-help
+  .ant-form-item-control-input-content
+  > span.ant-input-affix-wrapper.input {
+  margin-bottom: 12px;
+}
+
+.ant-form-item-with-help .ant-form-item-explain-error {
+  position: relative;
+  z-index: 2;
+  margin-top: 2px;
+}
+
+/* 登录主按钮银河风格 */
+.galaxy-btn {
+  --btn-bg: #0c0c14;
+  --btn-text: #ffffff;
+  --btn-primary: #8553f4;
+  --btn-secondary: #3b82f6;
+  --btn-accent: #f43f5e;
+  --btn-font-size: 16px;
+
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: var(--btn-font-size);
+  padding: 0.9em 2em;
+  border-radius: 0.75em;
+  border: none;
+  background: var(--btn-bg);
+  position: relative;
+  cursor: pointer;
+  overflow: hidden;
+  z-index: 1;
+  transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 0.5em 1.5em -0.5em rgba(133, 83, 244, 0.4);
+}
+
+.galaxy-btn:focus-visible {
+  outline: 2px solid var(--btn-primary);
+  outline-offset: 4px;
+}
+
+.galaxy-btn:active {
+  transform: scale(0.96);
+}
+
+.galaxy-btn__content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75em;
+  position: relative;
+  z-index: 2;
+  color: var(--btn-text);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.galaxy-btn__icon {
+  width: 1.25em;
+  height: 1.25em;
+  transition: transform 0.3s ease;
+  fill: var(--btn-text);
+}
+
+.galaxy-btn:hover .galaxy-btn__icon {
+  transform: translateX(0.25em) rotate(-10deg);
+}
+
+.galaxy-btn::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  z-index: 0;
+  background: conic-gradient(
+    from 0deg,
+    var(--btn-bg) 0deg,
+    var(--btn-primary) 60deg,
+    var(--btn-secondary) 120deg,
+    var(--btn-bg) 180deg,
+    var(--btn-accent) 240deg,
+    var(--btn-primary) 300deg,
+    var(--btn-bg) 360deg
+  );
+  border-radius: 0.75em;
+  animation: rotate-nebula 4s linear infinite;
+  filter: blur(8px);
+  opacity: 0.7;
+  transition: opacity 0.3s ease;
+}
+
+.galaxy-btn:hover::before {
+  opacity: 1;
+  animation-duration: 2s;
+}
+
+.galaxy-btn::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  background: var(--btn-bg);
+  border-radius: 0.6em;
+  z-index: 1;
+}
+
+.galaxy-btn__stars {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-image: radial-gradient(circle at 20% 30%, white 1px, transparent 1.5px),
+    radial-gradient(circle at 80% 70%, white 1px, transparent 1.5px),
+    radial-gradient(circle at 40% 80%, white 0.5px, transparent 1px);
+  background-size: 120% 120%;
+  opacity: 0.3;
+  transition: opacity 0.3s ease, background-position 0.3s ease;
+}
+
+.galaxy-btn:hover .galaxy-btn__stars {
+  opacity: 0.8;
+  animation: star-drift 5s linear infinite alternate;
+}
+
+/* 登录按钮内的跳跃圆点 loading 动画 */
+.login-loading-wrapper {
+  width: 200px;
+  /* 让 loading 占用高度与银河风格按钮一致（按钮本身有上下 padding） */
+  height: 24px;
+  position: relative;
+  z-index: 2;
+  margin: 0 auto;
+  overflow: hidden;
+}
+
+.login-loading-circle {
+  width: 20px;
+  height: 20px;
+  position: absolute;
+  border-radius: 50%;
+  background-color: #ffffff;
+  left: 15%;
+  transform-origin: 50%;
+  animation: login-circle 0.5s alternate infinite ease;
+}
+
+@keyframes login-circle {
+  0% {
+    /* 与 wrapper 高度 24px 对齐：底部摆放时扣掉圆点高度 5px */
+    top: 19px;
+    height: 5px;
+    border-radius: 50px 50px 25px 25px;
+    transform: scaleX(1.7);
+  }
+
+  40% {
+    height: 20px;
+    border-radius: 50%;
+    transform: scaleX(1);
+  }
+
+  100% {
+    top: 0%;
+  }
+}
+
+.login-loading-circle:nth-child(2) {
+  left: 45%;
+  animation-delay: 0.2s;
+}
+
+.login-loading-circle:nth-child(3) {
+  left: auto;
+  right: 15%;
+  animation-delay: 0.3s;
+}
+
+.login-loading-shadow {
+  width: 20px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: rgba(0, 0, 0, 0.9);
+  position: absolute;
+  /* 与圆点 0% 的底部位置保持一致（wrapper 24px - 阴影高度 4px） */
+  top: 20px;
+  transform-origin: 50%;
+  z-index: 1;
+  left: 15%;
+  filter: blur(1px);
+  animation: login-shadow 0.5s alternate infinite ease;
+}
+
+@keyframes login-shadow {
+  0% {
+    transform: scaleX(1.5);
+  }
+
+  40% {
+    transform: scaleX(1);
+    opacity: 0.7;
+  }
+
+  100% {
+    transform: scaleX(0.2);
+    opacity: 0.4;
+  }
+}
+
+.login-loading-shadow:nth-child(4) {
+  left: 45%;
+  animation-delay: 0.2s;
+}
+
+.login-loading-shadow:nth-child(5) {
+  left: auto;
+  right: 15%;
+  animation-delay: 0.3s;
+}
+
+@keyframes rotate-nebula {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes star-drift {
+  0% {
+    transform: scale(1);
+  }
+  100% {
+    transform: scale(1.1) translate(-2%, -2%);
+  }
+}
+
+/* AntD Switch：仿照你给的滑块 checkbox 风格（浅蓝色） */
+.ant-switch {
+  --switch-w: 44px;
+  --switch-h: 22px;
+  --switch-radius: 999px;
+
+  width: var(--switch-w) !important;
+  height: var(--switch-h) !important;
+  border-radius: var(--switch-radius) !important;
+  background: #d7d7d7 !important;
+  border: 0 !important;
+  transition: background 0.35s ease-in-out !important;
+  position: relative;
+  overflow: visible !important;
+  padding: 0 !important;
+}
+
+.ant-switch.ant-switch-checked {
+  background: linear-gradient(90deg, #93c5fd, #67e8f9) !important;
+}
+
+/* 让 AntD 的内部文本不显示（我们自己用伪元素画） */
+.ant-switch .ant-switch-inner {
+  display: none !important;
+}
+
+/* 滑块（handle） */
+.ant-switch .ant-switch-handle {
+  width: 18px !important;
+  height: 18px !important;
+  top: 2px !important;
+  left: 2px !important;
+  margin: 0 !important;
+  background: linear-gradient(45deg, #dedede, #ffffff) !important;
+  border-radius: 50% !important;
+  box-shadow: 0 6px 7px rgba(0, 0, 0, 0.3) !important;
+  transform: translateX(0) !important;
+  transition: transform 0.35s ease-in-out !important;
+}
+
+.ant-switch.ant-switch-checked .ant-switch-handle {
+  transform: translateX(22px) !important;
+}
+
+/* 去掉开关“表情点”显示，避免对比度不足 */
+.ant-switch::before,
+.ant-switch::after {
+  content: none !important;
+}
+
+/* 方式选择弹窗左右布局 */
+.auth-method-layout {
+  display: grid;
+  grid-template-columns: 1.05fr 1.35fr;
+  column-gap: 32px;
+  align-items: flex-start;
+  margin-top: 8px;
+}
+
+.auth-method-modal.auth-method-modal-exit .ant-modal-content {
+  animation: login-card-fly-out 360ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+.auth-method-modal.auth-method-modal-exit .ant-modal-mask {
+  background: rgba(15, 23, 42, 0.50) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  transition: background-color 180ms ease, backdrop-filter 180ms ease;
+}
+
+/* AuthMethodModal: 仅上浮渐隐，显式禁用 scale 变换 */
+.auth-method-modal .ant-modal-content {
+  transform: none !important;
+}
+
+.auth-modal-fade-enter .ant-modal,
+.auth-modal-fade-appear .ant-modal {
+  opacity: 0;
+  transform: translateY(10px) !important;
+}
+
+.auth-modal-fade-enter-active .ant-modal,
+.auth-modal-fade-appear-active .ant-modal {
+  opacity: 1;
+  transform: translateY(0) !important;
+  transition: opacity 220ms ease, transform 220ms ease;
+}
+
+.auth-modal-fade-leave .ant-modal {
+  opacity: 1;
+  transform: translateY(0) !important;
+}
+
+.auth-modal-fade-leave-active .ant-modal {
+  opacity: 0;
+  transform: translateY(-8px) !important;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.auth-mask-fade-enter,
+.auth-mask-fade-appear {
+  opacity: 0;
+}
+
+.auth-mask-fade-enter-active,
+.auth-mask-fade-appear-active {
+  opacity: 1;
+  transition: opacity 220ms ease;
+}
+
+.auth-mask-fade-leave {
+  opacity: 1;
+}
+
+.auth-mask-fade-leave-active {
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.auth-method-left {
+  border-right: 1px solid #e5e7eb;
+  padding-right: 24px;
+}
+
+.auth-method-right {
+  padding-left: 4px;
+}
+
+.auth-qrcode-card {
+  background: #f9fafb;
+  border-radius: 12px;
+  padding: 16px 16px 12px;
+  text-align: center;
+}
+
+.auth-qrcode-title {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.auth-qrcode-box {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.auth-qrcode-placeholder {
+  width: 156px;
+  height: 156px;
+  border-radius: 12px;
+  background: repeating-linear-gradient(
+      45deg,
+      #e5e7eb,
+      #e5e7eb 6px,
+      #f9fafb 6px,
+      #f9fafb 12px
+    );
+}
+
+.auth-qr-image {
+  width: 156px;
+  height: 156px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.auth-phone-code-row {
+  display: flex;
+  align-items: center;
+}
+
+.auth-method-modal .ant-modal-content {
+  backdrop-filter: blur(2px);
+}
+
+.email-register-form .ant-form-item {
+  margin-bottom: 22px;
+}
+
+.auth-method-right .email-register-form {
+  margin-top: 14px;
+}
+
+.auth-inline-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.auth-inline-label {
+  width: 52px;
+  flex: 0 0 52px;
+  color: #111827;
+  font-size: 14px;
+}
+
+.auth-inline-code-row {
+  flex: 1;
+}
+
+.underline-input.ant-input {
+  border: none !important;
+  border-bottom: 1.5px solid #111827 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  height: 44px;
+}
+
+.ant-input-affix-wrapper.underline-input {
+  border: none !important;
+  border-bottom: 1.5px solid #111827 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  min-height: 44px !important;
+}
+
+.underline-input.ant-input:focus,
+.ant-input-affix-wrapper.underline-input.ant-input-affix-wrapper-focused {
+  border-bottom-color: #000000 !important;
+  box-shadow: none !important;
+}
+
+.underline-input.ant-input::placeholder,
+.ant-input-affix-wrapper.underline-input input::placeholder {
+  color: #9ca3af;
+}
+
+.email-register-submit {
+  margin-top: 48px;
+}
+
+.auth-modal-back-text {
+  font-size: 12px;
+  color: #334155;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.auth-modal-back-text:hover {
+  color: #0f172a;
+}
+
+.turnstile-host {
+  min-height: 68px;
+}
+
+.turnstile-popup-host {
+  min-height: 74px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.local-captcha-wrap {
+  margin-bottom: 10px;
+}
+
+.auth-captcha-switch-text {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 13px;
+  color: #1677ff;
+  cursor: pointer;
+  user-select: none;
+}
+
+.auth-captcha-switch-text:hover {
+  color: #0958d9;
+}
+
+/* 登录页注册方式弹层样式 */
+.login-register-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.32);
+  backdrop-filter: blur(10px) saturate(1.06);
+  -webkit-backdrop-filter: blur(10px) saturate(1.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+}
+
+/* 与 AuthMethodModal 交接时，避免两层遮罩叠加导致“突然变暗”。 */
+.login-register-overlay.login-register-overlay-handoff {
+  background: rgba(15, 23, 42, 0.06);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.login-register-panel {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px 32px 28px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.25);
+  max-width: 420px;
+  width: 90%;
+  animation: loginRegisterPanelFloatIn 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.login-register-panel-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.login-register-panel-desc {
+  font-size: 12px;
+  color: #64748b;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.login-register-close-text {
+  display: block;
+  margin-top: 12px;
+  text-align: center;
+  font-size: 12px;
+  color: #334155;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.login-register-close-text:hover {
+  color: #0f172a;
+}
+
+@keyframes loginRegisterPanelFloatIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.login-register-wrapper {
+  display: flex;
+  list-style: none;
+  padding: 16px 0 0;
+  justify-content: center;
+  gap: 12px;
+  margin: 0 auto;
+}
+
+.login-register-wrapper .icon {
+  position: relative;
+  background: #fff;
+  border-radius: 50%;
+  width: 52px;
+  height: 52px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  box-shadow: 0 10px 18px rgba(15, 23, 42, 0.14);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  flex-shrink: 0;
+}
+
+.login-register-wrapper .tooltip {
+  position: absolute;
+  top: 0;
+  font-size: 12px;
+  background: #0f172a;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 6px;
+  box-shadow: 0 10px 10px rgba(0, 0, 0, 0.12);
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.25s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.login-register-wrapper .tooltip::before {
+  position: absolute;
+  content: "";
+  height: 8px;
+  width: 8px;
+  background: #0f172a;
+  bottom: -3px;
+  left: 50%;
+  transform: translate(-50%) rotate(45deg);
+}
+
+.login-register-wrapper .icon:hover .tooltip {
+  top: -52px;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.login-register-wrapper .icon:hover span,
+.login-register-wrapper .icon:hover .tooltip {
+  text-shadow: 0px -1px 0px rgba(0, 0, 0, 0.08);
+}
+
+.login-register-wrapper .icon.email:hover {
+  background: #2563eb;
+  color: #fff;
+}
+
+.login-register-wrapper .icon.github:hover {
+  background: #0f172a;
+  color: #fff;
+}
+
+.login-register-wrapper .icon.wechat:hover {
+  background: #22c55e;
+  color: #fff;
+}
+
+.login-register-wrapper .icon.phone:hover {
+  background: #0ea5e9;
+  color: #fff;
+}
+
+.login-register-wrapper .icon.google:hover {
+  background: #ea4335;
+  color: #fff;
+}
+
+.login-register-wrapper .icon.qq:hover {
+  background: #38bdf8;
+  color: #fff;
+}
+
+/* 调整广告轮播圆点样式为黑色并放大点击区域 */
+.slick-dots.slick-dots-bottom {
+  position: static;
+  display: flex !important;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.slick-dots li {
+  width: 14px;
+  height: 14px;
+}
+
+/* 覆盖 antd/react-slick 默认的 button:before 样式，统一用黑色长条 */
+.slick-dots.slick-dots-bottom li button {
+  position: relative;
+  width: 24px;
+  height: 3px;
+  padding: 0;
+}
+
+.slick-dots.slick-dots-bottom li button:before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.15);
+  opacity: 1;
+}
+
+.slick-dots.slick-dots-bottom li.slick-active button:before {
+  background: rgba(0, 0, 0, 1);
+}
+
+/* 广告轮播：切换瞬间也保持圆角，不出现直角闪烁 */
+.ad-carousel-shell .slick-slider,
+.ad-carousel-shell .slick-list,
+.ad-carousel-shell .slick-track,
+.ad-carousel-shell .slick-slide,
+.ad-carousel-shell .slick-slide > div {
+  border-radius: 12px;
+}
+
+.ad-carousel-shell .slick-list,
+.ad-carousel-shell .slick-slide > div {
+  overflow: hidden;
+}
+
+/* 上传卡片：工具行在 Space 外单独包一层；用正间距避免与拖拽区重叠（勿再用负 margin 上提整行） */
+.upload-card-toolbar-wrap {
+  margin-top: 12px;
+  width: 100%;
+}
+
+.upload-paste-textarea {
+  border-radius: 10px !important;
+  height: 168px !important;
+  min-height: 168px !important;
+  max-height: 168px !important;
+  resize: none !important;
+  overflow-y: auto !important;
+  scrollbar-gutter: stable;
+}
+
+.upload-paste-textarea::-webkit-scrollbar {
+  width: 10px;
+}
+
+.upload-paste-textarea::-webkit-scrollbar-track {
+  margin: 8px 0;
+  background: transparent;
+}
+
+.upload-paste-textarea::-webkit-scrollbar-thumb {
+  background: #a3a3a3;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.upload-paste-textarea::-webkit-scrollbar-button {
+  display: none;
+}
+
+/* ---------- 上传卡片：右下角内容预览 ---------- */
+.upload-preview-box {
+  height: 168px;
+  min-height: 168px;
+  max-height: 168px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.upload-preview-box__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.upload-preview-box__head-meta {
+  margin-left: auto;
+  font-size: 12px;
+}
+
+.upload-preview-box__icon {
+  color: #64748b;
+  font-size: 16px;
+}
+
+.upload-preview-box__placeholder {
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.upload-preview-box__meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.upload-preview-box__meta .ant-typography {
+  max-width: 58%;
+}
+
+.upload-preview-box__body {
+  margin: 0;
+  padding: 10px;
+  max-height: 200px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  color: var(--text-primary);
+}
+
+.upload-preview-box__error {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.upload-outline-list {
+  margin: 0;
+  padding-left: 18px;
+  max-height: 200px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-primary);
+}
+
+.upload-outline-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.upload-outline-badge {
+  flex: 0 0 auto;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 999px;
+  border: 1px solid #d4d4d8;
+  color: #18181b;
+  background: #fafafa;
+}
+
+.upload-outline-badge--section {
+  border-color: #bae6fd;
+  background: #f0f9ff;
+  color: #0c4a6e;
+}
+
+.upload-outline-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.upload-outline-line {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+/* ---------- 上传卡片：果冻分裂按钮（「查看示例论文」右侧，小号） ---------- */
+.upload-gooey-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  flex-shrink: 0;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.12));
+  pointer-events: auto;
+}
+
+.upload-gooey-svg-filters {
+  position: absolute;
+  width: 0;
+  height: 0;
+  visibility: hidden;
+  overflow: hidden;
+}
+
+.upload-gooey-container {
+  --ug-spread: 58px;
+  --ug-main-w: 80px;
+  --ug-main-h: 34px;
+  --ug-sub: 42px;
+  --ug-split-ease: cubic-bezier(0.34, 1.35, 0.55, 1.05);
+  --ug-merge-ease: cubic-bezier(0.55, 0.02, 0.25, 1.12);
+
+  /* 全部按钮统一白底黑字 */
+  --upload-main-bg: #ffffff;
+  --upload-sub-center: #ffffff;
+  --upload-polish: #ffffff;
+  --upload-cancel: #ffffff;
+
+  position: relative;
+  width: 200px;
+  height: 48px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  filter: none;
+}
+
+/* 分裂 / 聚拢过程中才开 goo，平时主按钮清晰 */
+.upload-gooey-container--goo {
+  filter: url(#uploadGooFilter);
+}
+
+.upload-gooey-btn {
+  position: absolute;
+  border: none;
+  outline: none;
+  color: #000;
+  cursor: pointer;
+  font-weight: 800;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  user-select: none;
+  font-family: "PingFang SC", system-ui, sans-serif;
+  backface-visibility: hidden;
+}
+
+.upload-gooey-main {
+  width: var(--ug-main-w);
+  height: var(--ug-main-h);
+  border-radius: calc(var(--ug-main-h) / 2);
+  background: var(--upload-main-bg);
+  z-index: 20;
+  font-size: 14px;
+  letter-spacing: 1px;
+  transform: translate3d(0, 0, 0) scale(1);
+  opacity: 1;
+  /* 默认：聚拢回到「开始」 */
+  transition:
+    transform 0.52s var(--ug-merge-ease),
+    opacity 0.35s ease;
+}
+
+.upload-gooey-sub {
+  width: var(--ug-sub);
+  height: var(--ug-sub);
+  border-radius: 50%;
+  z-index: 10;
+  transform: translate3d(0, 0, 0) scale(0);
+  opacity: 1;
+  pointer-events: none;
+  font-size: 12px;
+  /* 默认：向中心聚拢 */
+  transition:
+    transform 0.52s var(--ug-merge-ease),
+    opacity 0.3s ease;
+}
+
+.upload-gooey-container--active .upload-gooey-main {
+  transform: translate3d(0, 0, 0) scale(0) rotate(88deg);
+  opacity: 0;
+  pointer-events: none;
+  /* 分裂时主按钮快速「滴落」消失 */
+  transition:
+    transform 0.45s var(--ug-split-ease),
+    opacity 0.26s ease;
+}
+
+/* 展开态：子按钮用更弹的曲线分裂 */
+.upload-gooey-container--active .upload-gooey-sub {
+  pointer-events: auto;
+  z-index: 30;
+  transition:
+    transform 0.5s var(--ug-split-ease),
+    opacity 0.28s ease;
+}
+
+.upload-gooey-container--active .upload-gooey-sub-1 {
+  transform: translate3d(calc(-1 * var(--ug-spread)), 0, 0) scale(1);
+  background: var(--upload-polish);
+}
+
+.upload-gooey-container--active .upload-gooey-sub-2 {
+  transform: translate3d(0, 0, 0) scale(1);
+  background: var(--upload-sub-center);
+  font-size: 11px;
+}
+
+.upload-gooey-container--active .upload-gooey-sub-3 {
+  transform: translate3d(var(--ug-spread), 0, 0) scale(1);
+  background: var(--upload-cancel);
+  font-size: 17px;
+  line-height: 1;
+}
+
+.upload-gooey-sub-1 {
+  --tx: calc(-1 * var(--ug-spread));
+}
+.upload-gooey-sub-2 {
+  --tx: 0px;
+}
+.upload-gooey-sub-3 {
+  --tx: var(--ug-spread);
+}
+
+.upload-gooey-container--active .upload-gooey-sub:hover {
+  filter: brightness(1.08);
+}
+
+.upload-gooey-container--active .upload-gooey-sub-1:hover {
+  transform: translate3d(calc(-1 * var(--ug-spread)), 0, 0) scale(1.08);
+}
+.upload-gooey-container--active .upload-gooey-sub-2:hover {
+  transform: translate3d(0, 0, 0) scale(1.08);
+}
+.upload-gooey-container--active .upload-gooey-sub-3:hover {
+  transform: translate3d(var(--ug-spread), 0, 0) scale(1.08);
+}
+
+@keyframes upload-gooey-jelly {
+  0% {
+    transform: translate3d(var(--tx), 0, 0) scale(1, 1);
+  }
+  15% {
+    transform: translate3d(var(--tx), 0, 0) scale(1.55, 0.42);
+  }
+  30% {
+    transform: translate3d(var(--tx), 0, 0) scale(0.52, 1.55);
+  }
+  45% {
+    transform: translate3d(var(--tx), 0, 0) scale(1.28, 0.72);
+  }
+  60% {
+    transform: translate3d(var(--tx), 0, 0) scale(0.82, 1.18);
+  }
+  80% {
+    transform: translate3d(var(--tx), 0, 0) scale(1.08, 0.92);
+  }
+  100% {
+    transform: translate3d(var(--tx), 0, 0) scale(1, 1);
+  }
+}
+
+.upload-gooey-jelly.upload-gooey-sub-1,
+.upload-gooey-jelly.upload-gooey-sub-2,
+.upload-gooey-jelly.upload-gooey-sub-3 {
+  animation: upload-gooey-jelly 0.75s both;
+}
+
+/* 段落对比卡：每个小卡右下角显示该段字数 */
+.paragraph-compare-inner-card {
+  background: var(--bg-surface) !important;
+  border: 2px solid var(--border-strong) !important;
+  border-radius: 10px !important;
+  overflow: hidden; /* 保证上边角边框不被遮住 */
+}
+
+.paragraph-compare-inner-card .ant-card-body {
+  border-radius: inherit;
+}
+
+/* 工作台：把 GalaxyButton 尺寸调到更接近 AntD 默认按钮 */
+.workbench-galaxy-btn {
+  --btn-font-size: 16px;
+  padding: 0.9em 1.9em !important;
+  border-radius: 8px !important;
+}
+
+/* 工作台顶栏：药丸形、略小 */
+.workbench-galaxy-btn.workbench-galaxy-btn--pill {
+  --btn-font-size: 13px !important;
+  padding: 0.42em 1.15em !important;
+  min-height: 34px !important;
+  border-radius: 999px !important;
+}
+
+.workbench-galaxy-btn .galaxy-btn__content {
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+
+/* 工作台：圆形暂停/继续，与 Galaxy 风格一致 */
+.workbench-galaxy-circle-btn {
+  --btn-font-size: 16px !important;
+  width: 36px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  flex-shrink: 0;
+  /* 默认 .galaxy-btn 为 overflow:hidden，会裁掉四角光晕；圆形需外显 blur */
+  overflow: visible !important;
+  /* 给外扩光晕留一点边距，避免贴边仍被父级裁切 */
+  margin: 2px 6px 2px 2px;
+}
+
+.workbench-galaxy-circle-btn::before {
+  border-radius: 50% !important;
+  inset: -6px !important;
+}
+
+.workbench-galaxy-circle-btn::after {
+  border-radius: 50% !important;
+}
+
+/* 银河「星点」层是为大按钮设计的；小圆钮上径向渐变会落在底边/外侧，像多余白点 */
+.workbench-galaxy-circle-btn .galaxy-btn__stars {
+  display: none !important;
+}
+
+.workbench-galaxy-circle-btn .galaxy-btn__content {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0 !important;
+}
+
+.workbench-galaxy-circle-btn .galaxy-btn__text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.workbench-galaxy-circle-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 空闲可点（三角形=开始）：略柔化，与生成中暂停钮区分 */
+.workbench-galaxy-circle-btn--idle {
+  opacity: 0.92;
+}
+
+/* 实时跟随：关闭态弱化，与「开启」区分；图标上斜线表示「不自动跟随」 */
+.workbench-galaxy-circle-btn--follow-off {
+  opacity: 0.72;
+}
+
+.workbench-follow-icon-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.workbench-galaxy-circle-btn--follow-off .workbench-follow-icon-wrap::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 130%;
+  height: 2px;
+  background: currentColor;
+  transform: translate(-50%, -50%) rotate(-42deg);
+  opacity: 0.92;
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+/* 工作台：生成中提示（放在边框外右下角附近） */
+.paragraph-compare-outer-card {
+  position: relative;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  overflow: visible; /* 外框去掉，允许子元素角标/提示浮出 */
+}
+
+/* 工作台整页：占满控制台内容区高度，左侧段落列表 + 右侧工具栏固定、仅正文滚动 */
+.workbench-page-root.ant-layout {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: stretch !important;
+  /* 顶栏 64px + 控制台主区内边距上下各 16px */
+  height: calc(100vh - 96px);
+  max-height: calc(100vh - 96px);
+  min-height: 0;
+  overflow: hidden;
+  background: transparent !important;
+}
+
+/* 工作台左侧段落菜单：已完成段显示绿色勾 */
+.workbench-paragraph-menu .ant-menu-title-content {
+  width: 100%;
+}
+
+.workbench-menu-para-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding-right: 2px;
+  box-sizing: border-box;
+}
+
+.workbench-menu-para-check {
+  color: #52c41a !important;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.workbench-inner-sider.ant-layout-sider {
+  flex: 0 0 220px !important;
+  max-width: 220px !important;
+  min-width: 220px !important;
+  width: 220px !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  position: relative;
+  border-radius: 14px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.09);
+  overflow: hidden;
+}
+
+.workbench-inner-content.ant-layout-content {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  /* 顶部略留空，避免工具栏内圆形 Galaxy 光晕被本容器 overflow 裁掉 */
+  padding: 6px 0 0 16px !important;
+}
+
+.workbench-toolbar {
+  flex-shrink: 0;
+  padding: 6px 4px 10px 4px;
+  background: var(--bg-surface);
+  z-index: 5;
+  border-bottom: 1px solid var(--border-subtle);
+  overflow: visible;
+  border-radius: 12px;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+/* 避免 Ant Space 裁切子项外溢（圆形 Galaxy 光晕） */
+.workbench-toolbar .ant-space,
+.workbench-toolbar .ant-space-item {
+  overflow: visible;
+}
+
+.workbench-paragraph-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* 左侧菜单点击后 scrollIntoView 时，与可视区顶部留一点空隙 */
+.workbench-paragraph-anchor {
+  scroll-margin-top: 12px;
+}
+
+.workbench-stagger-item {
+  opacity: 0;
+  transform: translateY(-14px);
+  animation: console-item-rise-in 420ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+  animation-delay: var(--wb-delay, 0ms);
+}
+
+/* 工作台：段落卡片列表（工具栏已单独固定，此处仅保留与首段标题的间距） */
+.workbench-paragraph-stack {
+  margin-top: 4px;
+  padding-top: 16px;
+}
+
+.paragraph-compare-wrap {
+  position: relative;
+  padding-top: 2px;
+  margin-bottom: 14px; /* 每段之间要有可见间距 */
+}
+
+.paragraph-compare-title {
+  position: absolute;
+  left: 20px; /* 对齐到左侧内卡外边框附近（外层padding12 + Row gutter约8） */
+  top: -14px; /* 略上移即可贴内卡，避免与上方任务区文案重叠 */
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-primary);
+  z-index: 6;
+  background: transparent;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.paragraph-compare-typing-indicator {
+  position: absolute;
+  right: 10px;
+  bottom: -16px; /* 在内卡外侧右下角附近 */
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.85);
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  pointer-events: none;
+  z-index: 6;
+}
+
+/* 内卡：右下角字数角标（避免与边框/文字重叠） */
+.paragraph-compare-inner-card {
+  position: relative;
+}
+
+.paragraph-compare-inner-card .ant-card-body {
+  position: relative;
+  padding-bottom: 36px !important; /* 给角标留空间 */
+}
+
+.paragraph-compare-inner-wordcount {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text-secondary);
+  background: transparent;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+html.app-theme-dark .paragraph-compare-inner-wordcount {
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+}
+
+.paragraph-compare-wordcount-corner {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #000;
+  padding: 2px 6px;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  line-height: 1.2;
+  pointer-events: none;
+}
+
+

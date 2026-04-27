@@ -1,0 +1,5 @@
+# Local GPU/CPU only: load kiterforth with transformers. Skip if using REMOTE_INFERENCE_URL.
+transformers
+torch
+safetensors
+sentencepiece
