@@ -17,6 +17,7 @@ import { Avatar } from "antd";
 import { useUserProfile } from "../state/UserProfileContext";
 import { createGlyphDataUrl } from "../utils/glyphCenter";
 import { clearAdminSession, isAdminByEmail, setAdminSession } from "../state/adminAuth";
+import { useThemeMode } from "../state/ThemeContext";
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -32,6 +33,53 @@ const LoginPage: React.FC = () => {
   const [submitting, setSubmitting] = React.useState(false);
   const [isExiting, setIsExiting] = React.useState(false);
   const avatarFileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const { effectiveTheme } = useThemeMode();
+  const isDark = effectiveTheme === "dark";
+
+  const loginCardShellStyle = React.useMemo(
+    () =>
+      isDark
+        ? {
+            width: 760,
+            borderRadius: 24,
+            border: "1px solid #262626",
+            background: "#000000",
+            boxShadow: "0 24px 48px rgba(0, 0, 0, 0.45)"
+          }
+        : {
+            width: 760,
+            borderRadius: 24,
+            border: "1px solid rgba(255,255,255,0.92)",
+            background: "rgba(255,255,255,0.68)",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            boxShadow:
+              "0 28px 60px rgba(15,23,42,0.16), 0 2px 0 rgba(255,255,255,0.95) inset"
+          },
+    [isDark]
+  );
+
+  const loginCardBodyStyle = React.useMemo(
+    () =>
+      isDark
+        ? {
+            position: "relative" as const,
+            padding: 32,
+            borderRadius: 24,
+            background: "#000000",
+            border: "none",
+            boxShadow: "none"
+          }
+        : {
+            position: "relative" as const,
+            padding: 32,
+            borderRadius: 24,
+            background: "rgba(255,255,255,0.72)",
+            border: "1px solid rgba(255,255,255,0.9)",
+            boxShadow: "0 1px 0 rgba(255,255,255,0.92) inset"
+          },
+    [isDark]
+  );
 
   const openAuthMethod = React.useCallback(
     (nextMethod: "email" | "phone" | "wechat" | "qq" | "github" | "google") => {
@@ -122,26 +170,8 @@ const LoginPage: React.FC = () => {
     <>
     <Card
       className={`auth-main-card ${isExiting ? "login-card-exit" : ""}`}
-      style={{
-        width: 760,
-        borderRadius: 24,
-        border: "1px solid rgba(255,255,255,0.92)",
-        background: "rgba(255,255,255,0.68)",
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
-        boxShadow:
-          "0 28px 60px rgba(15,23,42,0.16), 0 2px 0 rgba(255,255,255,0.95) inset"
-      }}
-      styles={{
-        body: {
-          position: "relative",
-          padding: 32,
-          borderRadius: 24,
-          background: "rgba(255,255,255,0.72)",
-          border: "1px solid rgba(255,255,255,0.9)",
-          boxShadow: "0 1px 0 rgba(255,255,255,0.92) inset"
-        }
-      }}
+      style={loginCardShellStyle}
+      styles={{ body: loginCardBodyStyle }}
     >
       <button
         className="login-avatar-action-btn"
@@ -155,7 +185,7 @@ const LoginPage: React.FC = () => {
           left: 16,
           border: "none",
           background: "transparent",
-          color: "#0f172a",
+          color: isDark ? "#a3a3a3" : "#0f172a",
           fontSize: 20,
           fontWeight: 700,
           lineHeight: 1,
@@ -196,13 +226,22 @@ const LoginPage: React.FC = () => {
                   size={264}
                   src={avatarImageUrl ?? undefined}
                   icon={undefined}
-                  style={{
-                    background: "#ffffff",
-                    color: "#1f2937",
-                    border: "1px solid rgba(255,255,255,0.92)",
-                    boxShadow:
-                      "0 10px 22px rgba(15,23,42,0.14), 0 1px 0 rgba(255,255,255,0.95) inset"
-                  }}
+                  style={
+                    isDark
+                      ? {
+                          background: "#000000",
+                          color: "#a3a3a3",
+                          border: "1px solid #262626",
+                          boxShadow: "0 12px 28px rgba(0, 0, 0, 0.45)"
+                        }
+                      : {
+                          background: "#ffffff",
+                          color: "#1f2937",
+                          border: "1px solid rgba(255,255,255,0.92)",
+                          boxShadow:
+                            "0 10px 22px rgba(15,23,42,0.14), 0 1px 0 rgba(255,255,255,0.95) inset"
+                        }
+                  }
                 />
                 {!avatarImageUrl && avatarInitial ? (
                   <span key={avatarInitial} className="login-avatar-glyph login-avatar-glyph--pop">
@@ -222,10 +261,17 @@ const LoginPage: React.FC = () => {
                 gap: 10
               }}
             >
-              <Typography.Text style={{ fontSize: 15, color: "#1f2937", fontWeight: 600 }}>
+              <Typography.Text
+                style={{
+                  fontSize: 15,
+                  color: isDark ? "#a3a3a3" : "#1f2937",
+                  fontWeight: 600
+                }}
+              >
                 昵称
               </Typography.Text>
               <input
+                className="login-nickname-input"
                 value={nickname}
                 onChange={(e) => {
                   const next = e.target.value;
@@ -236,11 +282,11 @@ const LoginPage: React.FC = () => {
                 style={{
                   width: 178,
                   border: "none",
-                  borderBottom: "2px solid rgba(51, 65, 85, 0.35)",
+                  borderBottom: isDark ? "2px solid #3f3f46" : "2px solid rgba(51, 65, 85, 0.35)",
                   background: "transparent",
                   outline: "none",
                   fontSize: 15,
-                  color: "#0f172a",
+                  color: isDark ? "#fafafa" : "#0f172a",
                   padding: "3px 0"
                 }}
               />

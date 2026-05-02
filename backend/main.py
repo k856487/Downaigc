@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import difflib
 import json
 import random
 import smtplib
@@ -368,6 +369,27 @@ def _is_severe_content_loss(original: str, reduced: str) -> bool:
     on = len([ln for ln in o.splitlines() if ln.strip()])
     rn = len([ln for ln in r.splitlines() if ln.strip()])
     if ow >= 40 and on >= 3 and rn <= 2:
+        return True
+    return False
+
+
+def _is_too_similar_rewrite(original: str, reduced: str) -> bool:
+    """
+    判断改写是否“几乎没变化”：
+    - 统一空白后文本完全相同；
+    - 或长段落下相似度过高（仅改了极少字符）。
+    """
+    o = re.sub(r"\s+", "", (original or "").strip())
+    r = re.sub(r"\s+", "", (reduced or "").strip())
+    if not o or not r:
+        return False
+    if o == r:
+        return True
+    # 小短句允许更接近；长段落要求必须出现可见改写
+    ratio = difflib.SequenceMatcher(None, o, r).ratio()
+    if len(o) >= 120 and ratio >= 0.985:
+        return True
+    if len(o) >= 240 and ratio >= 0.975:
         return True
     return False
 
@@ -1083,16 +1105,50 @@ def split_into_paragraphs(req: CreateTaskRequest) -> List[str]:
     if not req.raw_text:
         return []
 
+    def looks_like_paper_title_line(curr: str, next_line: Optional[str]) -> bool:
+        """
+        识别文稿最前面的论文题目行，避免被当作可处理段落。
+        典型：第一行是标题，第二行是「摘要：」/「Abstract」等标签。
+        """
+        if not curr or not next_line:
+            return False
+        if len(curr) > 80:
+            return False
+        if curr.endswith(("。", "！", "？", ".", "!", "?")):
+            return False
+        if is_chapter_heading_line(curr):
+            return False
+        if re.match(r"^(摘要|abstract|关键词|关键字)\s*[：:]?.*$", curr, flags=re.IGNORECASE):
+            return False
+        nxt = next_line.strip()
+        if re.match(r"^(摘要|abstract|关键词|关键字)\s*[：:]?.*$", nxt, flags=re.IGNORECASE):
+            return True
+        if is_chapter_heading_line(nxt):
+            return True
+        return False
+
     # 优先按空行拆分；如果空行拆分只得到 1 段（常见于只有单换行、没有空行的文本），
     # 则退化为按单行换行拆分，避免把整篇当成“一大段”。
     blocks = [b.strip() for b in re.split(r"\n\s*\n", req.raw_text) if b.strip()]
     if len(blocks) > 1:
+        # 同样处理“标题行误入第1段”：若首段很短且次段是摘要/关键词/章节起始，则去掉首段
+        first = blocks[0].strip() if blocks else ""
+        second_first_line = ""
+        if len(blocks) >= 2:
+            second_lines = [ln.strip() for ln in blocks[1].splitlines() if ln.strip()]
+            second_first_line = second_lines[0] if second_lines else ""
+        if looks_like_paper_title_line(first, second_first_line):
+            blocks = blocks[1:]
         return blocks
 
     # 仅有单换行（无空行分段）时：按“段落”更贴近论文排版的方式做合并。
     # 目标：把类似“摘要：/关键词：”这类只起到标记作用的行，合并到后续正文所在段落，
     # 避免前端每一行都单独渲染成一个边框。
     lines = [line.strip() for line in req.raw_text.splitlines() if line.strip()]
+
+    # 文稿首行若是“题目行”，从分段列表中去掉（题目用于展示，不作为待改写段落）
+    if len(lines) >= 2 and looks_like_paper_title_line(lines[0], lines[1]):
+        lines = lines[1:]
 
     def is_label_line(s: str) -> bool:
         # 摘要/关键词/引言等：常见就是“摘要：”单独一行
@@ -1237,10 +1293,23 @@ REMOTE_INFERENCE_URL = os.getenv("REMOTE_INFERENCE_URL", "").strip()
 REMOTE_INFERENCE_MODEL = os.getenv("REMOTE_INFERENCE_MODEL", "kiterforth").strip()
 REMOTE_INFERENCE_API_KEY = os.getenv("REMOTE_INFERENCE_API_KEY", "").strip()
 REMOTE_INFERENCE_TIMEOUT = int(os.getenv("REMOTE_INFERENCE_TIMEOUT", "300"))
+# 新微调 merged 模型可仅输入正文段落直接输出改写段落：
+# - 显式设置 1/true/yes：强制开启简化调用
+# - 显式设置 0/false/no：强制关闭
+# - 未设置：当远程模型名为 merged 时自动开启
+SIMPLE_PARAGRAPH_REWRITE = os.getenv("SIMPLE_PARAGRAPH_REWRITE", "").strip().lower()
 
 
 def _use_remote_inference() -> bool:
     return bool(REMOTE_INFERENCE_URL)
+
+
+def _use_simple_paragraph_rewrite() -> bool:
+    if SIMPLE_PARAGRAPH_REWRITE in ("1", "true", "yes", "on"):
+        return True
+    if SIMPLE_PARAGRAPH_REWRITE in ("0", "false", "no", "off"):
+        return False
+    return _use_remote_inference() and REMOTE_INFERENCE_MODEL.lower() == "merged"
 
 
 def _remote_chat_sync(
@@ -1611,11 +1680,15 @@ def _offline_reduce_fallback(text: str) -> str:
         ("本文提出", "本研究提出"),
         ("综上所述", "总体来看"),
     ]
+    changed = 0
     for a, b in pairs:
         if a in out:
-            out = out.replace(a, b, 1)
-            if out != text:
-                return out
+            out2 = out.replace(a, b, 1)
+            if out2 != out:
+                out = out2
+                changed += 1
+            if changed >= 3:
+                break
     # 常见连接词再试一轮（避免与上一轮重复）
     pairs2 = [
         ("可以认为", "不妨认为"),
@@ -1626,9 +1699,14 @@ def _offline_reduce_fallback(text: str) -> str:
     ]
     for a, b in pairs2:
         if a in out:
-            out = out.replace(a, b, 1)
-            if out != text:
-                return out
+            out2 = out.replace(a, b, 1)
+            if out2 != out:
+                out = out2
+                changed += 1
+            if changed >= 6:
+                break
+    if out != text:
+        return out
     # 最后手段：首处逗号改分号，保持可读且与原文可区分（仍建议接通 Ollama）
     if out == text and "，" in text:
         return text.replace("，", "；", 1)
@@ -1671,6 +1749,17 @@ def build_reduce_system_and_user(
         f"{text}"
     )
     return system, user
+
+
+def _simple_mode_num_predict(text: str, default_cap: int) -> int:
+    """
+    新 merged 简化模式下，输出通常与输入段落同量级，不需要 1000+ token。
+    缩小上限可显著降低首段等待与超时概率。
+    """
+    wc = max(1, count_words(text))
+    # 经验值：给到原文字数约 1.8 倍 token 上限，并设置上下界
+    est = int(wc * 1.8)
+    return max(96, min(default_cap, max(192, est)))
 
 
 async def reviewer_extract_body(original: str, draft: str) -> str:
@@ -1791,15 +1880,27 @@ async def polish_with_model(original: str, *, model: Optional[str] = None) -> st
 
 
 async def _polish_body(text: str, *, model: str) -> str:
-    psys, puser = build_polish_system_and_user(text)
-    out = await model_chat_for_text(
-        model,
-        puser,
-        system=psys,
-        temperature=POLISH_TEMPERATURE,
-        top_p=POLISH_TOP_P,
-        num_predict=POLISH_NUM_PREDICT,
-    )
+    if _use_simple_paragraph_rewrite():
+        # 新 merged 模型：只喂正文，避免复杂指令干扰输出
+        np = _simple_mode_num_predict(text, POLISH_NUM_PREDICT)
+        out = await model_chat_for_text(
+            model,
+            text,
+            system=None,
+            temperature=POLISH_TEMPERATURE,
+            top_p=POLISH_TOP_P,
+            num_predict=np,
+        )
+    else:
+        psys, puser = build_polish_system_and_user(text)
+        out = await model_chat_for_text(
+            model,
+            puser,
+            system=psys,
+            temperature=POLISH_TEMPERATURE,
+            top_p=POLISH_TOP_P,
+            num_predict=POLISH_NUM_PREDICT,
+        )
     out = _strip_model_think_blocks(out)
     out = _strip_reduce_chinese_preamble(out)
     out = sanitize_reduce_output(text, out)
@@ -1849,16 +1950,40 @@ async def _reduce_body_with_wordcount(text: str, *, model: str) -> str:
     original_wc = count_words(text)
     max_delta = int(max(5, min(WORDCOUNT_TOLERANCE_ABS, original_wc * WORDCOUNT_TOLERANCE_RATIO)))
 
-    sys0, user0 = build_reduce_system_and_user(
-        text=text, target_wc=original_wc, max_delta=max_delta, strict=False
-    )
-    first = await model_chat_for_text(
-        model,
-        user0,
-        system=sys0,
-        temperature=REDUCE_TEMPERATURE,
-        top_p=REDUCE_TOP_P,
-    )
+    if _use_simple_paragraph_rewrite():
+        # 新 merged 模型：只输入原段落，直接取改写结果
+        np = _simple_mode_num_predict(text, REDUCE_NUM_PREDICT)
+        first = await model_chat_for_text(
+            model,
+            text,
+            system=None,
+            temperature=REDUCE_TEMPERATURE,
+            top_p=REDUCE_TOP_P,
+            num_predict=np,
+        )
+        # 若首轮基本没改动，简单重试一次（仍只给原段落），提高“可见改写”概率
+        if _is_too_similar_rewrite(text, first):
+            first_retry = await model_chat_for_text(
+                model,
+                text,
+                system=None,
+                temperature=min(1.0, REDUCE_TEMPERATURE + 0.22),
+                top_p=min(0.98, REDUCE_TOP_P + 0.03),
+                num_predict=np,
+            )
+            if first_retry.strip():
+                first = first_retry
+    else:
+        sys0, user0 = build_reduce_system_and_user(
+            text=text, target_wc=original_wc, max_delta=max_delta, strict=False
+        )
+        first = await model_chat_for_text(
+            model,
+            user0,
+            system=sys0,
+            temperature=REDUCE_TEMPERATURE,
+            top_p=REDUCE_TOP_P,
+        )
     first = _strip_model_think_blocks(first)
     first = _strip_reduce_chinese_preamble(first)
     if REVIEWER_ENABLED and (
@@ -1880,17 +2005,26 @@ async def _reduce_body_with_wordcount(text: str, *, model: str) -> str:
         return finalize_reduce_text(text, _offline_reduce_fallback(text))
 
     # 模型返回与原文相同（或未真正改写）
-    if first.strip() == text.strip():
+    if _is_too_similar_rewrite(text, first):
         fb = _offline_reduce_fallback(text)
-        if fb != text:
+        if not _is_too_similar_rewrite(text, fb):
             return finalize_reduce_text(text, fb)
 
     wc1 = count_words(first)
     if abs(wc1 - original_wc) <= max_delta:
         out1 = finalize_reduce_text(text, first)
-        if out1.strip() == text.strip():
+        if _is_too_similar_rewrite(text, out1):
             fb = _offline_reduce_fallback(text)
-            if fb != text:
+            if not _is_too_similar_rewrite(text, fb):
+                return finalize_reduce_text(text, fb)
+        return out1
+
+    if _use_simple_paragraph_rewrite():
+        # 简化模式不再做“重改一次”的复杂指令回合，避免再次触发元话语
+        out1 = finalize_reduce_text(text, first)
+        if _is_too_similar_rewrite(text, out1):
+            fb = _offline_reduce_fallback(text)
+            if not _is_too_similar_rewrite(text, fb):
                 return finalize_reduce_text(text, fb)
         return out1
 
@@ -1924,15 +2058,15 @@ async def _reduce_body_with_wordcount(text: str, *, model: str) -> str:
     if not second:
         return finalize_reduce_text(text, first)
 
-    if second.strip() == text.strip():
+    if _is_too_similar_rewrite(text, second):
         fb = _offline_reduce_fallback(text)
-        if fb != text:
+        if not _is_too_similar_rewrite(text, fb):
             return finalize_reduce_text(text, fb)
 
     out2 = finalize_reduce_text(text, second)
-    if out2.strip() == text.strip():
+    if _is_too_similar_rewrite(text, out2):
         fb = _offline_reduce_fallback(text)
-        if fb != text:
+        if not _is_too_similar_rewrite(text, fb):
             return finalize_reduce_text(text, fb)
     return out2
 
@@ -1955,6 +2089,25 @@ def derive_paper_title_from_parts(parts: List[str]) -> str:
                 (ln.strip() for ln in parts[1].splitlines() if ln.strip()),
                 "未命名文稿",
             )
+    if len(line) > 80:
+        return line[:80] + "…"
+    return line
+
+
+def derive_paper_title_from_raw_text(raw_text: Optional[str]) -> Optional[str]:
+    """
+    从整篇原文优先提取标题（首个非空行），用于避免“标题行被当作第一段”后任务标题缺失。
+    """
+    if not raw_text:
+        return None
+    lines = [ln.strip() for ln in raw_text.splitlines() if ln.strip()]
+    if not lines:
+        return None
+    line = lines[0]
+    if re.match(r"^题目\s*[：:]\s*(.+)$", line):
+        line = re.sub(r"^题目\s*[：:]\s*", "", line).strip()
+    if not line:
+        return None
     if len(line) > 80:
         return line[:80] + "…"
     return line
@@ -2418,6 +2571,7 @@ async def create_task(
             "方法部分描述了若干典型实验步骤，示例内容略。",
         ]
     paragraphs = make_task_paragraphs(req.mode, parts)
+    task_title = derive_paper_title_from_raw_text(req.raw_text) or derive_paper_title_from_parts(parts)
 
     task_repo.create_task(
         db,
@@ -2425,7 +2579,7 @@ async def create_task(
         user_id=user["id"],
         mode=req.mode,
         status="running",
-        title=derive_paper_title_from_parts(parts),
+        title=task_title,
         paragraphs=[p.model_dump() for p in paragraphs],
     )
 

@@ -2,12 +2,58 @@ import React from "react";
 import { App, Card, Form, Input, Button, Typography } from "antd";
 import { Link, useNavigate } from "react-router-dom";
 import { apiRequest, setAccessToken } from "../api/client";
+import { useThemeMode } from "../state/ThemeContext";
 
 const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
   const { message } = App.useApp();
   const [submitting, setSubmitting] = React.useState(false);
   const [isExiting, setIsExiting] = React.useState(false);
+  const { effectiveTheme } = useThemeMode();
+  const isDark = effectiveTheme === "dark";
+
+  const registerCardShellStyle = React.useMemo(
+    () =>
+      isDark
+        ? {
+            width: 420,
+            borderRadius: 24,
+            border: "1px solid #262626",
+            background: "#000000",
+            boxShadow: "0 24px 48px rgba(0, 0, 0, 0.45)"
+          }
+        : {
+            width: 420,
+            borderRadius: 24,
+            border: "1px solid rgba(255,255,255,0.92)",
+            background: "rgba(255,255,255,0.68)",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            boxShadow:
+              "0 28px 60px rgba(15,23,42,0.16), 0 2px 0 rgba(255,255,255,0.95) inset"
+          },
+    [isDark]
+  );
+
+  const registerCardBodyStyle = React.useMemo(
+    () =>
+      isDark
+        ? {
+            padding: 32,
+            borderRadius: 24,
+            background: "#000000",
+            border: "none",
+            boxShadow: "none"
+          }
+        : {
+            padding: 32,
+            borderRadius: 24,
+            background: "rgba(255,255,255,0.72)",
+            border: "1px solid rgba(255,255,255,0.9)",
+            boxShadow: "0 1px 0 rgba(255,255,255,0.92) inset"
+          },
+    [isDark]
+  );
 
   const onFinish = async (values: {
     email: string;
@@ -41,25 +87,8 @@ const RegisterPage: React.FC = () => {
   return (
     <Card
       className={`auth-main-card ${isExiting ? "login-card-exit" : ""}`}
-      style={{
-        width: 420,
-        borderRadius: 24,
-        border: "1px solid rgba(255,255,255,0.92)",
-        background: "rgba(255,255,255,0.68)",
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
-        boxShadow:
-          "0 28px 60px rgba(15,23,42,0.16), 0 2px 0 rgba(255,255,255,0.95) inset"
-      }}
-      styles={{
-        body: {
-          padding: 32,
-          borderRadius: 24,
-          background: "rgba(255,255,255,0.72)",
-          border: "1px solid rgba(255,255,255,0.9)",
-          boxShadow: "0 1px 0 rgba(255,255,255,0.92) inset"
-        }
-      }}
+      style={registerCardShellStyle}
+      styles={{ body: registerCardBodyStyle }}
     >
       <Typography.Title level={4} style={{ marginBottom: 8 }}>
         创建账户

@@ -11,6 +11,7 @@ import PolishWorkbenchPage from "./pages/PolishWorkbenchPage";
 import HistoryPage from "./pages/HistoryPage";
 import SettingsPage from "./pages/SettingsPage";
 import FeedbackPage from "./pages/FeedbackPage";
+import JourneyInsightsPage from "./pages/JourneyInsightsPage";
 import AdminLoginPage from "./pages/admin/AdminLoginPage";
 import AdminDashboardPage from "./pages/admin/AdminDashboardPage";
 import AdminFeedbackPage from "./pages/admin/AdminFeedbackPage";
@@ -33,6 +34,7 @@ const App: React.FC = () => {
         <Route path="polish" element={<PolishConsolePage />} />
         <Route path="polish/:taskId" element={<PolishWorkbenchPage />} />
         <Route path="history" element={<HistoryPage />} />
+        <Route path="journey" element={<JourneyInsightsPage />} />
         <Route path="feedback" element={<FeedbackPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>

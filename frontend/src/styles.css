@@ -31,36 +31,33 @@
   --ad-card-desc: rgba(17, 24, 39, 0.7);
 }
 
+/* 暗色：对齐 neutral-900 / neutral-800 / zinc（参考 v0 输入区风格） */
 html.app-theme-dark {
-  --bg-page: #1a1a1a;
-  --bg-auth-page: var(--bg-page);
-  /* 让 Card/内容容器更偏灰而不是深蓝 */
-  --bg-surface: #2a2a2a;
-  --bg-surface-2: #242424;
+  --bg-page: #0a0a0a;
+  --bg-auth-page: #171717;
+  --bg-surface: #171717;
+  --bg-surface-2: #262626;
 
-  --border-subtle: #3a3a3a;
-  --border-strong: #e5e7eb;
+  --border-subtle: #262626;
+  --border-strong: #3f3f46;
 
-  --text-primary: #e5e5e5;
-  --text-secondary: #a6a6a6;
+  --text-primary: #ffffff;
+  --text-secondary: #a3a3a3;
 
-  /* Input：暗色时不要再使用黑色边框/阴影 */
-  --input-bg: var(--bg-surface-2);
-  --input-border: var(--border-subtle);
-  --input-shadow-color: var(--border-subtle);
-  --input-placeholder: rgba(166, 166, 166, 0.85);
+  --input-bg: #171717;
+  --input-border: #262626;
+  --input-shadow-color: #262626;
+  --input-placeholder: #737373;
 
-  /* AdCarousel：暗色卡片改为灰底 + 白字 */
-  --ad-card-bg-1: linear-gradient(135deg, #2a2a2a 0%, #1f1f1f 60%);
-  --ad-card-bg-2: linear-gradient(135deg, #2b2b2b 0%, #1f1f1f 55%);
-  --ad-card-bg-3: linear-gradient(135deg, #2a2a2a 0%, #202020 55%);
+  --ad-card-bg-1: linear-gradient(135deg, #171717 0%, #0a0a0a 62%);
+  --ad-card-bg-2: linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 55%);
+  --ad-card-bg-3: linear-gradient(135deg, #171717 0%, #0f0f0f 55%);
   --ad-card-title: #ffffff;
-  --ad-card-desc: rgba(255, 255, 255, 0.72);
+  --ad-card-desc: #a3a3a3;
 
-  /* 滚动条：轨道黑色（避免侧栏等仍为系统白槽） */
-  --scrollbar-track: #000000;
-  --scrollbar-thumb: rgba(255, 255, 255, 0.22);
-  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.38);
+  --scrollbar-track: #0a0a0a;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.18);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.32);
   color-scheme: dark;
 }
 
@@ -109,14 +106,14 @@ html.app-theme-dark .ant-card-head {
 /* 暗色侧栏选中态：把 AntD 默认蓝色选中改成灰色 */
 html.app-theme-dark .ant-menu-light .ant-menu-item-selected,
 html.app-theme-dark .ant-menu-light .ant-menu-item-active {
-  background: rgba(255, 255, 255, 0.06) !important;
+  background: #262626 !important;
   color: var(--text-primary) !important;
 }
 
 html.app-theme-dark .ant-menu-light .ant-menu-item-selected::after,
 html.app-theme-dark .ant-menu-light .ant-menu-item-active::after {
-  border-left-color: rgba(255, 255, 255, 0.22) !important;
-  background: rgba(255, 255, 255, 0.22) !important;
+  border-left-color: #52525b !important;
+  background: #52525b !important;
 }
 
 /* 登录页：注册/登录方式弹层在暗色下保持灰底 */
@@ -131,8 +128,8 @@ html.app-theme-dark .login-register-panel-desc {
 }
 
 html.app-theme-dark .login-register-wrapper .icon {
-  background: rgba(255, 255, 255, 0.06) !important;
-  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.25) !important;
+  background: #262626 !important;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.35) !important;
 }
 
 body {
@@ -155,8 +152,8 @@ html.app-theme-light .ant-card {
   -webkit-backdrop-filter: blur(8px);
 }
 
-/* 登录/注册主卡片：更强的毛玻璃和柔阴影 */
-.auth-main-card.ant-card {
+/* 登录/注册主卡片：浅色毛玻璃（必须挂在 .app-theme-light，否则会盖过暗色内联样式） */
+html.app-theme-light .auth-main-card.ant-card {
   border-radius: 28px !important;
   border: 1px solid rgba(255, 255, 255, 0.92) !important;
   background: linear-gradient(
@@ -173,7 +170,7 @@ html.app-theme-light .ant-card {
   overflow: visible;
 }
 
-.auth-main-card .ant-card-body {
+html.app-theme-light .auth-main-card .ant-card-body {
   border-radius: 28px !important;
   background: linear-gradient(
       180deg,
@@ -328,6 +325,12 @@ html.app-theme-light .ant-card {
   overflow: hidden;
 }
 
+html.app-theme-dark .header-user-avatar {
+  background-color: #171717;
+  border: 1px solid #262626;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.4);
+}
+
 .header-user-avatar__glyph {
   position: absolute;
   inset: 0;
@@ -469,17 +472,17 @@ html.app-theme-light .ant-card {
 }
 
 html.app-theme-dark .auth-main-card.ant-card {
-  border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(35, 35, 35, 0.82);
-  box-shadow:
-    0 20px 46px rgba(0, 0, 0, 0.35),
-    0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  border: 1px solid #262626 !important;
+  background: #000000 !important;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 html.app-theme-dark .auth-main-card .ant-card-body {
-  background: rgba(35, 35, 35, 0.78);
-  border-color: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+  background: #000000 !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 /* 按钮统一两档（主：磨砂黑；次：半透明白），并去掉光圈/发光层 */
@@ -571,9 +574,9 @@ html.app-theme-light .ant-btn-link {
 }
 
 html.app-theme-dark .console-floating-header-icons {
-  background: rgba(34, 34, 34, 0.75);
-  border-color: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  background: #171717;
+  border: 1px solid #262626;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
 }
 
 .console-main-sider.ant-layout-sider {
@@ -749,13 +752,21 @@ html.app-theme-dark .console-floating-header-icons {
   transform: none;
 }
 
-/* 暗色下保持对比度，避免毛玻璃发灰 */
+/* 暗色：实心 neutral 面板 + neutral-800 描边（与 v0 卡片一致） */
 html.app-theme-dark .console-main-sider.ant-layout-sider {
-  background: rgba(34, 34, 34, 0.82) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow:
-    0 12px 28px rgba(0, 0, 0, 0.28),
-    0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  background: #171717 !important;
+  border: 1px solid #262626 !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
+}
+
+html.app-theme-dark .console-main-sider.ant-layout-sider.ant-layout-sider-collapsed {
+  background: #171717 !important;
+  border: 1px solid #262626 !important;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.38) !important;
+}
+
+html.app-theme-dark .console-main-sider.ant-layout-sider.ant-layout-sider-collapsed:hover {
+  background: #262626 !important;
 }
 
 #root {
@@ -879,6 +890,90 @@ html.app-theme-dark .console-main-sider.ant-layout-sider {
 .auth-main-card .input.ant-input-status-error,
 .auth-main-card .ant-input-affix-wrapper.input.ant-input-status-error {
   border-color: #000000 !important;
+}
+
+/* 暗色：输入区与 v0 一致（白字 / neutral-500 占位 / neutral-800 边） */
+html.app-theme-dark .input,
+html.app-theme-dark .ant-input-affix-wrapper.input {
+  color: var(--text-primary);
+}
+
+html.app-theme-dark .ant-input-affix-wrapper.input input {
+  color: var(--text-primary) !important;
+  -webkit-text-fill-color: var(--text-primary) !important;
+  caret-color: var(--text-primary);
+}
+
+html.app-theme-dark .input.ant-input-status-error {
+  color: var(--text-primary) !important;
+}
+
+html.app-theme-dark .auth-main-card .input,
+html.app-theme-dark .auth-main-card .ant-input-affix-wrapper.input {
+  border-color: #262626 !important;
+}
+
+html.app-theme-dark .auth-main-card .input:focus,
+html.app-theme-dark .auth-main-card .ant-input.input:focus,
+html.app-theme-dark
+  .auth-main-card
+  .ant-input-affix-wrapper.input.ant-input-affix-wrapper-focused {
+  border-color: #3f3f46 !important;
+}
+
+html.app-theme-dark .auth-main-card .input.ant-input-status-error,
+html.app-theme-dark .auth-main-card .ant-input-affix-wrapper.input.ant-input-status-error {
+  border-color: #262626 !important;
+}
+
+html.app-theme-dark .auth-main-card input.input,
+html.app-theme-dark .auth-main-card .ant-input.input,
+html.app-theme-dark .auth-main-card .ant-input-affix-wrapper.input input {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  caret-color: #ffffff;
+}
+
+html.app-theme-dark .auth-main-card input.input:focus,
+html.app-theme-dark .auth-main-card .ant-input.input:focus,
+html.app-theme-dark .auth-main-card .ant-input-affix-wrapper.input input:focus {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
+html.app-theme-dark .auth-main-card input.input:-webkit-autofill,
+html.app-theme-dark .auth-main-card input.input:-webkit-autofill:hover,
+html.app-theme-dark .auth-main-card input.input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #ffffff !important;
+  caret-color: #ffffff !important;
+}
+
+html.app-theme-dark .auth-inline-label {
+  color: var(--text-secondary);
+}
+
+html.app-theme-dark .underline-input.ant-input,
+html.app-theme-dark .ant-input-affix-wrapper.underline-input {
+  border-bottom-color: #3f3f46 !important;
+}
+
+html.app-theme-dark .underline-input.ant-input:focus,
+html.app-theme-dark
+  .ant-input-affix-wrapper.underline-input.ant-input-affix-wrapper-focused {
+  border-bottom-color: #52525b !important;
+}
+
+html.app-theme-dark .underline-input.ant-input::placeholder,
+html.app-theme-dark .ant-input-affix-wrapper.underline-input input::placeholder {
+  color: #737373;
+}
+
+html.app-theme-dark .auth-modal-back-text {
+  color: #a3a3a3;
+}
+
+html.app-theme-dark .auth-modal-back-text:hover {
+  color: #ffffff;
 }
 
 /* 厚阴影输入框：下方校验文案留出空间，避免阴影盖住文字 */
@@ -1240,6 +1335,18 @@ html.app-theme-dark .console-main-sider.ant-layout-sider {
 .auth-method-left {
   border-right: 1px solid #e5e7eb;
   padding-right: 24px;
+}
+
+/* 暗色登录：左侧不再单独铺面板，与卡片纯黑底一体，仅保留栏间细分隔线 */
+html.app-theme-dark .auth-main-card .auth-method-left {
+  background: transparent;
+  border-radius: 0;
+  padding-left: 0;
+  border-right: 1px solid #262626;
+}
+
+html.app-theme-dark .auth-main-card .login-nickname-input::placeholder {
+  color: #737373;
 }
 
 .auth-method-right {

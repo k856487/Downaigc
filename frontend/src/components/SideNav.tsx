@@ -5,7 +5,8 @@ import {
   FileTextOutlined,
   HistoryOutlined,
   SettingOutlined,
-  MessageOutlined
+  MessageOutlined,
+  LineChartOutlined
 } from "@ant-design/icons";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -20,6 +21,7 @@ const SideNav: React.FC<SideNavProps> = ({ collapsed }) => {
   const selectedKey = (() => {
     if (location.pathname.startsWith("/console/polish")) return "polish";
     if (location.pathname.startsWith("/console/history")) return "history";
+    if (location.pathname.startsWith("/console/journey")) return "journey";
     if (location.pathname.startsWith("/console/feedback")) return "feedback";
     if (location.pathname.startsWith("/console/settings")) return "settings";
     return "dashboard";
@@ -42,6 +44,9 @@ const SideNav: React.FC<SideNavProps> = ({ collapsed }) => {
           case "history":
             navigate("/console/history");
             break;
+          case "journey":
+            navigate("/console/journey");
+            break;
           case "settings":
             navigate("/console/settings");
             break;
@@ -54,7 +59,8 @@ const SideNav: React.FC<SideNavProps> = ({ collapsed }) => {
         { key: "dashboard", icon: <AppstoreOutlined />, label: "概览" },
         { key: "polish", icon: <FileTextOutlined />, label: "论文优化" },
         { key: "history", icon: <HistoryOutlined />, label: "历史记录" },
-        { key: "feedback", icon: <MessageOutlined />, label: "用户反馈" },
+        { key: "journey", icon: <LineChartOutlined />, label: "使用旅程" },
+        { key: "feedback", icon: <MessageOutlined />, label: "体验反馈" },
         { key: "settings", icon: <SettingOutlined />, label: "设置" }
       ]}
     />

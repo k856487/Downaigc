@@ -18,3 +18,5 @@ __pycache__/
 **/.env
 .env.backup.*
 **/.env.backup.*
+local-ai-serve/
+**/local-ai-serve/

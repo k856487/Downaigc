@@ -1,5 +1,5 @@
 import React from "react";
-import { App, Card, Col, Row, Space, Typography } from "antd";
+import { App, Card, Space, Typography } from "antd";
 import AdCarousel, { type AdItem } from "../components/AdCarousel";
 import AdPlayerModal from "../components/AdPlayerModal";
 import { useReward } from "../state/RewardContext";
@@ -74,47 +74,6 @@ const DashboardPage: React.FC = () => {
         </Card>
       </div>
 
-      <div className="console-stagger-item console-stagger-item--3">
-        <Card title="最近一次论文润色">
-          <Space direction="vertical">
-            <Typography.Text strong>示例论文：机器学习综述</Typography.Text>
-            <Typography.Text type="secondary">
-              3 个段落 · 最近一次执行完成 · 示例数据，仅供界面预览
-            </Typography.Text>
-          </Space>
-        </Card>
-      </div>
-
-      <div className="console-stagger-item console-stagger-item--4">
-        <Card title="我的使用旅程">
-          <Row gutter={16}>
-            <Col span={8}>
-              <Card variant="borderless">
-                <Typography.Text strong>Step 1 · 准备论文</Typography.Text>
-                <Typography.Paragraph type="secondary" style={{ marginTop: 8 }}>
-                  上传整篇论文或分章节文档，系统会自动进行分段与字数统计。
-                </Typography.Paragraph>
-              </Card>
-            </Col>
-            <Col span={8}>
-              <Card variant="borderless">
-                <Typography.Text strong>Step 2 · 润色与降重</Typography.Text>
-                <Typography.Paragraph type="secondary" style={{ marginTop: 8 }}>
-                  选择段落、调整参数，逐段对比原文与润色后版本。
-                </Typography.Paragraph>
-              </Card>
-            </Col>
-            <Col span={8}>
-              <Card variant="borderless">
-                <Typography.Text strong>Step 3 · 导出与提交</Typography.Text>
-                <Typography.Paragraph type="secondary" style={{ marginTop: 8 }}>
-                  确认所有段落修改后，一键导出润色后的全文草稿。
-                </Typography.Paragraph>
-              </Card>
-            </Col>
-          </Row>
-        </Card>
-      </div>
     </Space>
   );
 };
