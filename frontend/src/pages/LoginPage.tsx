@@ -9,18 +9,19 @@ import {
   PlusOutlined,
   MinusOutlined
 } from "@ant-design/icons";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import AuthMethodModal from "../components/AuthMethodModal";
 import { apiRequest, setAccessToken } from "../api/client";
 import { Avatar } from "antd";
 import { useUserProfile } from "../state/UserProfileContext";
 import { createGlyphDataUrl } from "../utils/glyphCenter";
-import { clearAdminSession, isAdminByEmail, setAdminSession } from "../state/adminAuth";
+import { navigateAfterLogin } from "../utils/postLoginRedirect";
 import { useThemeMode } from "../state/ThemeContext";
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { message } = App.useApp();
   const { profile, setNickname: saveNickname, setAvatarUrl: saveAvatarUrl } = useUserProfile();
   const [nickname, setNickname] = React.useState(profile.nickname);
@@ -41,10 +42,7 @@ const LoginPage: React.FC = () => {
       isDark
         ? {
             width: 760,
-            borderRadius: 24,
-            border: "1px solid #262626",
-            background: "#000000",
-            boxShadow: "0 24px 48px rgba(0, 0, 0, 0.45)"
+            borderRadius: 24
           }
         : {
             width: 760,
@@ -65,10 +63,7 @@ const LoginPage: React.FC = () => {
         ? {
             position: "relative" as const,
             padding: 32,
-            borderRadius: 24,
-            background: "#000000",
-            border: "none",
-            boxShadow: "none"
+            borderRadius: 24
           }
         : {
             position: "relative" as const,
@@ -103,17 +98,11 @@ const LoginPage: React.FC = () => {
       );
       setAccessToken(res.access_token);
       const normalizedEmail = values.email.trim().toLowerCase();
-      if (isAdminByEmail(normalizedEmail)) {
-        setAdminSession(normalizedEmail);
-      } else {
-        // 普通端登录后清理管理员会话，避免后续 /admin 误判继承旧状态。
-        clearAdminSession();
-      }
       setIsExiting(true);
       await new Promise<void>((resolve) => {
         window.setTimeout(() => resolve(), 360);
       });
-      navigate(isAdminByEmail(normalizedEmail) ? "/admin/dashboard" : "/console/dashboard");
+      navigateAfterLogin(navigate, normalizedEmail, location.state);
     } catch (e: any) {
       message.error(e?.detail || "登录失败，请重试");
     } finally {
@@ -208,40 +197,14 @@ const LoginPage: React.FC = () => {
         style={{ gridTemplateColumns: "1.25fr 1.2fr", columnGap: 36 }}
       >
         <div className="auth-method-left">
-          <div
-            className="auth-qrcode-card"
-            style={{
-              background: "transparent",
-              border: "none",
-              boxShadow: "none",
-              padding: "4px 2px 0",
-              minHeight: 350,
-              display: "flex",
-              flexDirection: "column"
-            }}
-          >
+          <div className="login-avatar-section">
             <div className="auth-qrcode-box" style={{ marginBottom: 10 }}>
               <div style={{ position: "relative", width: 264, height: 264 }}>
                 <Avatar
+                  className="login-page-avatar"
                   size={264}
                   src={avatarImageUrl ?? undefined}
                   icon={undefined}
-                  style={
-                    isDark
-                      ? {
-                          background: "#000000",
-                          color: "#a3a3a3",
-                          border: "1px solid #262626",
-                          boxShadow: "0 12px 28px rgba(0, 0, 0, 0.45)"
-                        }
-                      : {
-                          background: "#ffffff",
-                          color: "#1f2937",
-                          border: "1px solid rgba(255,255,255,0.92)",
-                          boxShadow:
-                            "0 10px 22px rgba(15,23,42,0.14), 0 1px 0 rgba(255,255,255,0.95) inset"
-                        }
-                  }
                 />
                 {!avatarImageUrl && avatarInitial ? (
                   <span key={avatarInitial} className="login-avatar-glyph login-avatar-glyph--pop">
@@ -286,7 +249,7 @@ const LoginPage: React.FC = () => {
                   background: "transparent",
                   outline: "none",
                   fontSize: 15,
-                  color: isDark ? "#fafafa" : "#0f172a",
+                  color: isDark ? "#d4d4d4" : "#0f172a",
                   padding: "3px 0"
                 }}
               />
@@ -315,7 +278,7 @@ const LoginPage: React.FC = () => {
               name="password"
               rules={[{ required: true, message: "请输入密码" }]}
             >
-              <Input.Password className="input" placeholder="请输入密码" />
+              <Input.Password className="login-password-field input" placeholder="请输入密码" />
             </Form.Item>
             <Form.Item style={{ marginBottom: 8 }}>
               <button
@@ -372,7 +335,7 @@ const LoginPage: React.FC = () => {
                 }
               ]}
             >
-              <Checkbox style={{ fontSize: 12 }}>
+              <Checkbox className="login-glass-checkbox" style={{ fontSize: 12 }}>
                 我已阅读并同意：本工具仅用于学术写作辅助，不对因不当使用产生的后果负责。
               </Checkbox>
             </Form.Item>

@@ -1,0 +1,136 @@
+/* ---------- App 主题（light/dark/system） ---------- */
+:root {
+  --bg-page:
+    radial-gradient(ellipse 82% 66% at 8% 8%, rgba(175, 109, 255, 0.24), transparent 64%),
+    radial-gradient(ellipse 82% 66% at 92% 92%, rgba(120, 190, 255, 0.24), transparent 64%),
+    linear-gradient(180deg, #fdf6ff 0%, #fff3f7 100%);
+  --bg-auth-page:
+    radial-gradient(ellipse 82% 66% at 8% 8%, rgba(175, 109, 255, 0.24), transparent 64%),
+    radial-gradient(ellipse 82% 66% at 92% 92%, rgba(120, 190, 255, 0.24), transparent 64%),
+    linear-gradient(180deg, #fdf6ff 0%, #fff3f7 100%);
+  --bg-surface: #ffffff;
+  --bg-surface-2: #fafbfc;
+
+  --border-subtle: #e4e6eb;
+  --border-strong: #000000;
+
+  --text-primary: #111827;
+  --text-secondary: #64748b;
+
+  /* Input：默认（浅色） */
+  --input-bg: #ffffff;
+  --input-border: #000000;
+  --input-shadow-color: #000000;
+  --input-placeholder: rgba(100, 116, 139, 0.95);
+
+  /* AdCarousel：卡片灰底 + 字色（根据主题切换） */
+  --ad-card-bg-1: linear-gradient(135deg, #EEF3FF 0%, #FFFFFF 60%);
+  --ad-card-bg-2: linear-gradient(135deg, #F0F9FF 0%, #FFFFFF 55%);
+  --ad-card-bg-3: linear-gradient(135deg, #F5F6F8 0%, #FFFFFF 55%);
+  --ad-card-title: #111827;
+  --ad-card-desc: rgba(17, 24, 39, 0.7);
+
+  /* 固定桌面布局宽度：窗口变窄时不重排，仅出现横向滚动 */
+  --app-layout-min-width: 1280px;
+  --console-content-min-width: 960px;
+  /* 侧栏右缘 → 主内容区内边：12(left) + 204(sider) + 14(gap) + 12(pad) = 242 */
+  --console-sider-offset-left: 12px;
+  --console-sider-width-expanded: 204px;
+  --console-sider-content-gap: 14px;
+  --console-content-shell-padding-x: 12px;
+  --console-sider-reserve: calc(
+    var(--console-sider-offset-left) + var(--console-sider-width-expanded) +
+      var(--console-sider-content-gap) + var(--console-content-shell-padding-x)
+  );
+  --console-content-shell-margin-left: calc(
+    var(--console-sider-offset-left) + var(--console-sider-width-expanded) +
+      var(--console-sider-content-gap)
+  );
+  --console-sider-width-collapsed: 50px;
+  --console-sider-content-gap-collapsed: 5px;
+  --console-content-shell-margin-left-collapsed: calc(
+    var(--console-sider-offset-left) + var(--console-sider-width-collapsed) +
+      var(--console-sider-content-gap-collapsed)
+  );
+  /* 侧栏/顶栏胶囊顶边距，与 .app-top-right-cluster top:10px 视觉对齐 */
+  --console-top-gutter: 10px;
+  --console-bottom-gutter: 10px;
+  --console-header-clearance: 72px;
+  --console-sider-height: calc(
+    100dvh - var(--console-top-gutter) - var(--console-bottom-gutter)
+  );
+}
+
+/* 暗色：背景由 shader 绘制；面板统一玻璃质感（与 auth-main-card 同系） */
+html.app-theme-dark {
+  --glass-bg: rgba(255, 255, 255, 0.06);
+  --glass-bg-raised: rgba(255, 255, 255, 0.08);
+  --glass-bg-input: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border-subtle: rgba(255, 255, 255, 0.06);
+  /* 与 console-main-sider 一致：blur(10px)，不用过大 blur */
+  --glass-blur: blur(10px);
+  --glass-blur-md: blur(10px);
+  --glass-blur-sm: blur(10px);
+  --glass-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.55);
+  --glass-shadow-md: 0 12px 32px rgba(0, 0, 0, 0.38);
+
+  --bg-page: transparent;
+  --bg-auth-page: transparent;
+  --bg-surface: var(--glass-bg);
+  --bg-surface-2: var(--glass-bg-raised);
+
+  --border-subtle: var(--glass-border);
+  --border-strong: rgba(255, 255, 255, 0.12);
+
+  --text-primary: #ffffff;
+  --text-secondary: #a3a3a3;
+
+  --input-bg: var(--glass-bg-input);
+  --input-border: var(--glass-border);
+  --input-shadow-color: rgba(255, 255, 255, 0.06);
+  --input-placeholder: #737373;
+
+  --ad-card-bg-1: linear-gradient(135deg, rgba(255, 255, 255, 0.045) 0%, rgba(255, 255, 255, 0.008) 62%);
+  --ad-card-bg-2: linear-gradient(135deg, rgba(255, 255, 255, 0.035) 0%, rgba(255, 255, 255, 0.006) 55%);
+  --ad-card-bg-3: linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.008) 55%);
+  --ad-card-title: #ffffff;
+  --ad-card-desc: #a3a3a3;
+
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.18);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.32);
+  color-scheme: dark;
+}
+
+/* 暗色：自定义滚动条（Chrome / Edge / Safari）；Firefox 用 scrollbar-color */
+html.app-theme-dark,
+html.app-theme-dark * {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: thin;
+}
+
+html.app-theme-dark *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+html.app-theme-dark *::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 8px;
+}
+
+html.app-theme-dark *::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 8px;
+  border: 2px solid var(--scrollbar-track);
+}
+
+html.app-theme-dark *::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+html.app-theme-dark *::-webkit-scrollbar-corner {
+  background: var(--scrollbar-track);
+}
+

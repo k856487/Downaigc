@@ -1,12 +1,14 @@
 import React from "react";
 import { Outlet } from "react-router-dom";
 import AppHeader from "../components/AppHeader";
+import "../styles/auth.css";
 
 const AuthLayout: React.FC = () => {
   return (
     <>
       <AppHeader />
       <div
+        className="auth-page-shell"
         style={{
           minHeight: "100vh",
           display: "flex",

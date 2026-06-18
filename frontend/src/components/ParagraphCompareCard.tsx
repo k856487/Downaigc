@@ -1,5 +1,4 @@
 import React from "react";
-import { Card, Col, Row, Space, Typography } from "antd";
 
 export interface ParagraphCompareCardProps {
   index: number;
@@ -8,8 +7,11 @@ export interface ParagraphCompareCardProps {
   original: string;
   polished: string;
   mode: "polish" | "reduce";
-  /** 后端请求进行中（思考中），右侧尚无最终正文，不逐字；仅接口返回最终正文后再由右侧逐字播放 */
   isAwaitingApi?: boolean;
+  isTypingReveal?: boolean;
+  /** 逐字动画期间由父组件直写 DOM，绕过 React reconcile */
+  resultBodyRef?: React.Ref<HTMLDivElement>;
+  wordCountElRef?: React.Ref<HTMLSpanElement>;
 }
 
 const ParagraphCompareCard: React.FC<ParagraphCompareCardProps> = ({
@@ -19,75 +21,63 @@ const ParagraphCompareCard: React.FC<ParagraphCompareCardProps> = ({
   mode,
   original,
   polished,
-  isAwaitingApi
+  isAwaitingApi,
+  isTypingReveal,
+  resultBodyRef,
+  wordCountElRef
 }) => {
   const polishedLabel = mode === "polish" ? "优化后" : "降AIGC后";
+  const domDrivenResult = isTypingReveal && resultBodyRef != null;
 
   return (
-    <div className="paragraph-compare-wrap">
+    <div
+      className={[
+        "paragraph-compare-wrap",
+        isTypingReveal ? "paragraph-compare-wrap--typing" : ""
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <div className="paragraph-compare-title">第 {index} 段</div>
-      <div className="paragraph-compare-outer-card" style={{ padding: 12 }}>
+      <div className="paragraph-compare-outer-card">
         {isAwaitingApi ? (
-          <div className="paragraph-compare-typing-indicator">思考中...</div>
+          <div className="paragraph-compare-typing-indicator" aria-live="polite">
+            思考中
+            <span className="paragraph-compare-typing-dots" aria-hidden="true">
+              <span>.</span>
+              <span>.</span>
+              <span>.</span>
+            </span>
+          </div>
         ) : null}
-        <Space direction="vertical" style={{ width: "100%" }} size={12}>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Card
-                size="small"
-                className="paragraph-compare-inner-card"
-                styles={{ body: { padding: 12 } }}
-              >
-                <Typography.Text strong style={{ fontSize: 12 }}>
-                  原文
-                </Typography.Text>
-                <div className="paragraph-compare-inner-wordcount">
-                  {originalWordCount} 字
-                </div>
-                <Typography.Paragraph
-                  style={{
-                    marginTop: 8,
-                    marginBottom: 0,
-                    fontSize: 13,
-                    whiteSpace: "pre-wrap", // 保留段落换行，逐字输出时也不折叠
-                    wordBreak: "break-word"
-                  }}
-                >
-                  {original}
-                </Typography.Paragraph>
-              </Card>
-            </Col>
-            <Col span={12}>
-              <Card
-                size="small"
-                className="paragraph-compare-inner-card"
-                styles={{ body: { padding: 12 } }}
-              >
-                <Typography.Text strong style={{ fontSize: 12 }}>
-                  {polishedLabel}
-                </Typography.Text>
-                <div className="paragraph-compare-inner-wordcount">
-                  {wordCount} 字
-                </div>
-                <Typography.Paragraph
-                  style={{
-                    marginTop: 8,
-                    marginBottom: 0,
-                    fontSize: 13,
-                    whiteSpace: "pre-wrap", // 保留段落换行
-                    wordBreak: "break-word"
-                  }}
-                >
-                  {polished}
-                </Typography.Paragraph>
-              </Card>
-            </Col>
-          </Row>
-        </Space>
+        <div className="paragraph-compare-grid">
+          <div className="paragraph-compare-inner-card">
+            <div className="paragraph-compare-inner-label">原文</div>
+            <div className="paragraph-compare-inner-wordcount">
+              {originalWordCount} 字
+            </div>
+            <div className="paragraph-compare-body">{original}</div>
+          </div>
+          <div className="paragraph-compare-inner-card">
+            <div className="paragraph-compare-inner-label">{polishedLabel}</div>
+            <div className="paragraph-compare-inner-wordcount">
+              {domDrivenResult && wordCountElRef ? (
+                <span ref={wordCountElRef}>0 字</span>
+              ) : (
+                `${wordCount} 字`
+              )}
+            </div>
+            <div
+              ref={domDrivenResult ? resultBodyRef : undefined}
+              className="paragraph-compare-body paragraph-compare-body--result"
+            >
+              {domDrivenResult ? null : polished}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
 };
 
-export default ParagraphCompareCard;
-
+export default React.memo(ParagraphCompareCard);

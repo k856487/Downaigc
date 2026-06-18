@@ -4,29 +4,24 @@ import {
   Upload,
   Typography,
   Space,
-  Button,
   Switch,
   Select,
-  Row,
-  Col,
-  Segmented,
+  Radio,
   Input
 } from "antd";
 import { InboxOutlined, FileTextOutlined } from "@ant-design/icons";
 import type { UploadProps } from "antd";
 import GooeySplitButton from "./GooeySplitButton";
-import { countThesisWords } from "../utils/textStats";
+import { useReward } from "../state/RewardContext";
+import { useUploadDraft } from "../state/UploadDraftContext";
+import { countBillingChars, countThesisWords } from "../utils/textStats";
+import { resolveTaskCharge } from "../utils/taskBilling";
 
 const { Dragger } = Upload;
 const { TextArea } = Input;
 
-type PreviewState = {
-  name: string;
-  text: string;
-  rawText: string;
-  wordCount: number;
-  error?: string;
-};
+/** 预览区展示的最大字符数（超出则截断并提示全文字数） */
+const FILE_PREVIEW_CHAR_LIMIT = 8000;
 
 type OutlineItem = {
   title: string;
@@ -36,9 +31,27 @@ type OutlineItem = {
 };
 
 const UploadCard: React.FC = () => {
-  const [inputMode, setInputMode] = React.useState<"file" | "text">("file");
-  const [pastedText, setPastedText] = React.useState("");
-  const [preview, setPreview] = React.useState<PreviewState | null>(null);
+  const { state: rewardState } = useReward();
+  const imeComposingRef = React.useRef(false);
+  const {
+    inputMode,
+    pastedText,
+    preview,
+    setInputMode,
+    setPastedText,
+    setPreview,
+    clearDraft
+  } = useUploadDraft();
+
+  const rawForPoints = inputMode === "text" ? pastedText : (preview?.rawText ?? "");
+  const estimatedPointCost = React.useMemo(
+    () => countBillingChars(rawForPoints.trim()),
+    [rawForPoints]
+  );
+  const taskCharge = React.useMemo(
+    () => resolveTaskCharge(estimatedPointCost, rewardState.writableWords),
+    [estimatedPointCost, rewardState.writableWords]
+  );
 
   const outlineFromText = React.useCallback((text: string): OutlineItem[] => {
     const lines = text.split(/\r?\n/);
@@ -147,6 +160,10 @@ const UploadCard: React.FC = () => {
 
   const textOutline = React.useMemo(() => outlineFromText(pastedText), [outlineFromText, pastedText]);
 
+  const handleClearContent = React.useCallback(() => {
+    clearDraft();
+  }, [clearDraft]);
+
   const beforeUpload: UploadProps["beforeUpload"] = (file) => {
     const name = file.name || "未命名";
     const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -156,6 +173,7 @@ const UploadCard: React.FC = () => {
       file.type === "application/json";
 
     if (!textLike) {
+      setPastedText("");
       setPreview({
         name,
         text: "",
@@ -169,6 +187,7 @@ const UploadCard: React.FC = () => {
 
     const reader = new FileReader();
     reader.onload = (e) => {
+      setPastedText("");
       const raw = String(e.target?.result ?? "");
       const wordCount = countThesisWords(raw);
       setPreview({
@@ -179,6 +198,7 @@ const UploadCard: React.FC = () => {
       });
     };
     reader.onerror = () => {
+      setPastedText("");
       setPreview({
         name,
         text: "",
@@ -192,19 +212,40 @@ const UploadCard: React.FC = () => {
   };
 
   return (
-    <Card styles={{ body: { overflow: "visible" } }}>
-      <Space direction="vertical" style={{ width: "100%" }} size={16}>
-        <Typography.Title level={5} style={{ margin: 0 }}>
-          上传论文文件
-        </Typography.Title>
-        <Segmented
-          value={inputMode}
-          onChange={(value) => setInputMode(value as "file" | "text")}
-          options={[
-            { label: "上传文件", value: "file" },
-            { label: "粘贴文本", value: "text" }
-          ]}
-        />
+    <Card
+      title="上传论文文件"
+      extra={
+        <Space size={8} wrap align="center" className="upload-card-points-extra">
+          <Typography.Text type="secondary">预估消耗</Typography.Text>
+          <Typography.Text strong>
+            {taskCharge.wordsDue.toLocaleString("zh-CN")}
+          </Typography.Text>
+          <Typography.Text type="secondary">字（按输出扣费）</Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            剩余可改 {rewardState.writableWords.toLocaleString("zh-CN")} 字
+          </Typography.Text>
+          {!taskCharge.ok ? (
+            <Typography.Text type="danger" style={{ fontSize: 12 }}>
+              可改写字数不足
+            </Typography.Text>
+          ) : null}
+        </Space>
+      }
+      styles={{ body: { overflow: "visible" } }}
+    >
+      <Space direction="vertical" style={{ width: "100%" }} size={20}>
+        <div className="upload-card-input-band">
+          <Radio.Group
+            className="upload-card-mode-radio"
+            value={inputMode}
+            onChange={(e) => setInputMode(e.target.value as "file" | "text")}
+            optionType="button"
+            buttonStyle="solid"
+          >
+            <Radio.Button value="file">上传文件</Radio.Button>
+            <Radio.Button value="text">粘贴文本</Radio.Button>
+          </Radio.Group>
+        </div>
         <Typography.Text type="secondary">
           支持 PDF / Word / Markdown，系统会自动按段落拆分并统计字数（当前为前端示例，不会真实上传）。
         </Typography.Text>
@@ -224,60 +265,94 @@ const UploadCard: React.FC = () => {
           <TextArea
             className="upload-paste-textarea"
             value={pastedText}
-            onChange={(e) => setPastedText(e.target.value)}
+            onCompositionStart={() => {
+              imeComposingRef.current = true;
+            }}
+            onCompositionEnd={(e) => {
+              imeComposingRef.current = false;
+              setPastedText(e.currentTarget.value);
+              setPreview(null);
+            }}
+            onChange={(e) => {
+              if (imeComposingRef.current) return;
+              setPastedText(e.target.value);
+              setPreview(null);
+            }}
             placeholder="在此直接粘贴论文文本，系统将提取标题并展示目录结构。"
             rows={7}
+            style={{ marginBottom: 4 }}
           />
         )}
       </Space>
 
-      {/* 移出 Space：避免 ant-space 的 gap 固定 16px，margin 难以上移；此处单独控制与拖拽区的距离 */}
       <div className="upload-card-toolbar-wrap">
-        <Row gutter={[16, 16]} align="top">
-          <Col xs={24} lg={10}>
-            <Space size={16} wrap align="center">
-              <Space>
-                <Typography.Text>自动分段预览</Typography.Text>
-                <Switch defaultChecked />
-              </Space>
-              <Space>
-                <Typography.Text>论文语言</Typography.Text>
-                <Select
-                  defaultValue="zh"
-                  options={[
-                    { label: "中文", value: "zh" },
-                    { label: "英文", value: "en" }
-                  ]}
-                  style={{ width: 100 }}
-                />
-              </Space>
-              <Space direction="vertical" size={6} style={{ width: "100%" }}>
-                <Space size={10} align="center" wrap>
-                  <Button type="link" size="small">
-                    查看示例论文
-                  </Button>
-                  <GooeySplitButton rawText={inputMode === "text" ? pastedText : preview?.rawText} />
+        <div className="upload-card-tool-preview-row">
+          <div className="upload-card-tool-preview-row__controls">
+            <div className="upload-card-controls">
+              <div className="upload-card-controls__options">
+                <Space size={8} align="center">
+                  <Typography.Text>自动分段预览</Typography.Text>
+                  <Switch defaultChecked />
                 </Space>
-                <Typography.Paragraph
-                  type="secondary"
-                  style={{ marginBottom: 0, fontSize: 12, lineHeight: 1.65, maxWidth: 420 }}
-                >
-                  可先打开示例论文了解分段与字数展示方式；准备好自己的文件后，点击「开始」再选择润色、降
-                  AI 等步骤（当前为界面示意，任务不会真实提交）。
-                </Typography.Paragraph>
-              </Space>
-            </Space>
-          </Col>
-          <Col xs={24} lg={14}>
+                <Space size={8} align="center">
+                  <Typography.Text>论文语言</Typography.Text>
+                  <Select
+                    defaultValue="zh"
+                    options={[
+                      { label: "中文", value: "zh" },
+                      { label: "英文", value: "en" }
+                    ]}
+                    style={{ width: 100 }}
+                  />
+                </Space>
+              </div>
+              <div className="upload-card-controls__actions">
+                <div className="upload-gooey-toolbar-row">
+                  <button
+                    type="button"
+                    className="upload-gooey-btn upload-gooey-main upload-gooey-main--inline"
+                    title="清空当前已上传文件与粘贴文本"
+                    aria-label="清空当前已上传文件与粘贴文本"
+                    onClick={handleClearContent}
+                  >
+                    清空内容
+                  </button>
+                  <GooeySplitButton rawText={inputMode === "text" ? pastedText : preview?.rawText} />
+                </div>
+              </div>
+              <Typography.Paragraph
+                type="secondary"
+                className="upload-card-controls__hint"
+              >
+                准备好内容后点击「开始」选择润色、降 AI 等步骤；「清空内容」始终可点，会同时清空文件预览与粘贴文本。
+              </Typography.Paragraph>
+            </div>
+          </div>
+          <div className="upload-card-tool-preview-row__preview">
             <div className="upload-preview-box">
-              <div className="upload-preview-box__head">
-                <FileTextOutlined className="upload-preview-box__icon" />
-                <Typography.Text strong>{inputMode === "text" ? "目录预览" : "内容预览"}</Typography.Text>
-                {inputMode === "text" ? (
-                  <Typography.Text type="secondary" className="upload-preview-box__head-meta">
-                    约 {countThesisWords(pastedText).toLocaleString()} 字
+              <div className="upload-preview-box__header-row">
+                <div className="upload-preview-box__head">
+                  <FileTextOutlined className="upload-preview-box__icon" />
+                  <Typography.Text strong>
+                    {inputMode === "text" ? "目录预览" : "内容预览"}
                   </Typography.Text>
-                ) : null}
+                </div>
+                <div className="upload-preview-box__header-aside">
+                  {inputMode === "text" ? (
+                    <Typography.Text type="secondary" className="upload-preview-box__header-meta-text">
+                      约 {countThesisWords(pastedText).toLocaleString()} 字
+                    </Typography.Text>
+                  ) : preview ? (
+                    <div className="upload-preview-box__meta">
+                      <Typography.Text ellipsis title={preview.name}>
+                        {preview.name}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        {preview.error ? "—" : `约 ${preview.wordCount.toLocaleString()} 字`}
+                      </Typography.Text>
+                    </div>
+                  ) : null}
+                </div>
               </div>
               {inputMode === "file" ? (
                 <>
@@ -288,22 +363,20 @@ const UploadCard: React.FC = () => {
                   )}
                   {preview && (
                     <>
-                      <div className="upload-preview-box__meta">
-                        <Typography.Text ellipsis title={preview.name}>
-                          {preview.name}
-                        </Typography.Text>
-                        <Typography.Text type="secondary">
-                          {preview.error ? "—" : `约 ${preview.wordCount.toLocaleString()} 字`}
-                        </Typography.Text>
-                      </div>
                       {preview.error ? (
                         <Typography.Text type="danger" className="upload-preview-box__error">
                           {preview.error}
                         </Typography.Text>
                       ) : (
-                        <Typography.Text type="secondary" className="upload-preview-box__placeholder">
-                          已读取文件，可点击「开始」继续处理。
-                        </Typography.Text>
+                        <pre
+                          className="upload-preview-box__body"
+                          tabIndex={0}
+                          aria-label="文件正文预览"
+                        >
+                          {preview.text.length > FILE_PREVIEW_CHAR_LIMIT
+                            ? preview.text.slice(0, FILE_PREVIEW_CHAR_LIMIT)
+                            : preview.text}
+                        </pre>
                       )}
                     </>
                   )}
@@ -334,8 +407,8 @@ const UploadCard: React.FC = () => {
                 </>
               )}
             </div>
-          </Col>
-        </Row>
+          </div>
+        </div>
       </div>
     </Card>
   );

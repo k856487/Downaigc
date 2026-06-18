@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import difflib
+import io
 import json
+import hmac
+import hashlib
 import random
 import smtplib
 import os
@@ -26,20 +30,24 @@ try:
 except ImportError:
     pass
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, status
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 
 from db.base import Base
 from db.session import engine, get_db, SessionLocal
-from repositories import admin_repo, auth_repo, feedback_repo, task_repo
+from repositories import admin_repo, ad_watch_repo, auth_repo, feedback_repo, points_repo, redeem_repo, task_repo
+from pricing import ad_watch_reward_points as pricing_ad_watch_reward_points
+from admin_access import admin_email_allowlist
+from adhub_proxy import router as adhub_proxy_router
 from models import entities as _entities  # noqa: F401
-from models.entities import PointState, TaskParagraph
+from models.entities import PointState, RedeemCode, TaskParagraph, User
 from models.entities import EmailVerificationCode
 
 JWT_ALG = "HS256"
@@ -57,10 +65,10 @@ def _iso_date_utc(d: Optional[datetime] = None) -> str:
 
 def count_words(text: str) -> int:
     """
-    简化版词数：中英文混合时，按“英数字串/中文单字”计数。
-    仅用于前端 UI 演示，不追求学术严格口径。
+    计费口径：仅统计汉字（1 字 = 1 汉字）。
+    标点、空格、英文与数字不计入扣费。
     """
-    return len(re.findall(r"[A-Za-z0-9]+|[\u4e00-\u9fff]", text))
+    return len(re.findall(r"[\u4e00-\u9fff]", text or ""))
 
 
 def detect_language_directive(text: str) -> str:
@@ -91,6 +99,46 @@ def detect_language_directive(text: str) -> str:
     )
 
 
+def _detach_inline_keyword_suffix(body: str, existing_suffix: str) -> Tuple[str, str]:
+    """
+    当「关键词：」未单独成行、而是接在摘要正文末或同行时，拆入 suffix，避免整段送模型后关键词被吃掉。
+    """
+    suf = (existing_suffix or "").strip()
+    if suf:
+        return body.strip(), existing_suffix
+    b = (body or "").rstrip()
+    if "关键词" not in b and "关键字" not in b:
+        return body.strip(), ""
+    for label in ("关键词", "关键字"):
+        m = re.search(rf"(?s)^(.+?)(\n\s*{label}\s*[：:].+)$", b)
+        if m and len(m.group(1).strip()) >= 8 and len(m.group(2).strip()) >= 4:
+            return m.group(1).rstrip(), m.group(2).strip()
+        m2 = re.search(rf"(?s)^(.+?)(\s+{label}\s*[：:].+)$", b)
+        if m2 and len(m2.group(1).strip()) >= 8 and len(m2.group(2).strip()) >= 4:
+            return m2.group(1).rstrip(), m2.group(2).strip()
+    for label in ("关键词", "关键字"):
+        m = re.search(rf"(?s)^(.+?)([。！？…；;]\s*{label}\s*[：:].+)$", b)
+        if m and len(m.group(1).strip()) >= 8 and len(m.group(2).strip()) >= 4:
+            punct, rest = m.group(2)[0], m.group(2)[1:].lstrip()
+            return (m.group(1).rstrip() + punct).rstrip(), rest
+    best_kw: Optional[Tuple[int, str, str]] = None
+    for label in ("关键词", "关键字"):
+        for m in re.finditer(rf"{label}\s*[：:]", b):
+            pos = m.start()
+            if pos < 8:
+                continue
+            head = b[:pos].rstrip()
+            tail = b[pos:].strip()
+            if len(head) < 8 or len(tail) < 4:
+                continue
+            if "；" in tail or ";" in tail or "、" in tail or len(tail) <= 220:
+                if best_kw is None or pos >= best_kw[0]:
+                    best_kw = (pos, head, tail)
+    if best_kw:
+        return best_kw[1], best_kw[2]
+    return body.strip(), ""
+
+
 def split_paper_abstract_block(text: str) -> Optional[Tuple[str, str, str]]:
     """
     识别常见论文首段结构：标题行 + 「摘要：」行 + 摘要正文 + 「关键词：…」行。
@@ -108,11 +156,23 @@ def split_paper_abstract_block(text: str) -> Optional[Tuple[str, str, str]]:
     def _kw_line_index(block: List[str]) -> Optional[int]:
         for i, ln in enumerate(block):
             s = ln.strip()
-            if re.match(r"^关键词\s*[：:]", s) or re.match(r"^关键词\s*$", s):
+            if (
+                re.match(r"^关键词\s*[：:]", s)
+                or re.match(r"^关键词\s*$", s)
+                or re.match(r"^关键字\s*[：:]", s)
+                or re.match(r"^关键字\s*$", s)
+            ):
                 return i
         return None
 
     lines = text.splitlines()
+    if len(lines) == 1:
+        ln = lines[0].strip()
+        m0 = re.match(
+            r"^(摘要\s*[：:]\s*)(.+?)((?:\s+关键词|\s+关键字)\s*[：:].+)$", ln, re.DOTALL
+        )
+        if m0:
+            return ("摘要：\n", m0.group(2).strip(), m0.group(3).strip())
     if len(lines) < 2:
         return None
 
@@ -129,10 +189,12 @@ def split_paper_abstract_block(text: str) -> Optional[Tuple[str, str, str]]:
         kw_idx = _kw_line_index(rest)
         if kw_idx is None:
             body = "\n".join(rest).strip()
-            return (prefix, body, "")
+            body, sfx = _detach_inline_keyword_suffix(body, "")
+            return (prefix, body, sfx)
         body = "\n".join(rest[:kw_idx]).strip()
         suffix = rest[kw_idx].rstrip()
-        return (prefix, body, suffix)
+        body, sfx = _detach_inline_keyword_suffix(body, suffix)
+        return (prefix, body, sfx)
 
     # B) 第二行「摘要：」与正文在同一行
     m = re.match(r"^摘要\s*[：:]\s*(.*)$", line1, re.DOTALL)
@@ -153,12 +215,185 @@ def split_paper_abstract_block(text: str) -> Optional[Tuple[str, str, str]]:
             body_lines.extend(rest[:kw_idx])
             body = "\n".join(body_lines).strip()
             suffix = rest[kw_idx].rstrip()
-            return (prefix, body, suffix)
+            body, sfx = _detach_inline_keyword_suffix(body, suffix)
+            return (prefix, body, sfx)
 
     body = "\n".join(body_lines).strip()
     if not body:
         return None
-    return (prefix, body, "")
+    body, sfx = _detach_inline_keyword_suffix(body, "")
+    return (prefix, body, sfx)
+
+
+def strip_redundant_leading_abstract_label(prefix: str, reduced: str) -> str:
+    """
+    prefix 已含单独「摘要」标签行时，模型若再在正文开头输出「摘要：」或单独一行「摘要」，
+    拼回后会叠成「摘要： 摘要」类重复；在此剥掉正文开头的复读标记（可多种形态交替出现）。
+    """
+    if not reduced or not prefix.strip():
+        return reduced
+    nonempty = [ln.strip() for ln in prefix.split("\n") if ln.strip()]
+    if len(nonempty) < 2:
+        return reduced
+    if not re.match(r"^摘要\s*[：:]?\s*$", nonempty[1]):
+        return reduced
+    r = reduced.lstrip()
+    while r.strip():
+        prev = r
+        r = re.sub(r"^(?:摘要\s*[：:]\s*)+", "", r, count=1)
+        if r != prev:
+            continue
+        lines = r.splitlines()
+        if lines and re.match(r"^摘要\s*$", lines[0].strip()):
+            r = "\n".join(lines[1:]).lstrip()
+            continue
+        # 同行「摘要： … 摘要 …」中多出来的「摘要」+ 空白
+        r = re.sub(r"^摘要\s+", "", r, count=1)
+        if r != prev:
+            continue
+        break
+    return r.lstrip() if r.strip() else reduced
+
+
+def strip_runaway_leading_abstract_labels(text: str) -> str:
+    """
+    去掉段首连续重复的「摘要：」堆叠（模型复读或与分段合并后的段首标签叠加）。
+    单次「摘要：」保留不动；两次及以上从段首整体剥掉，保留其后正文。
+    另处理「摘要：」与单独「摘要」紧邻（同行或次行）的常见误输出。
+    """
+    if not (t := text.strip()):
+        return text
+    new_t = re.sub(r"^(?:摘要\s*[：:]\s*){2,}", "", t, count=1)
+    if new_t != t:
+        return new_t.lstrip() if new_t.strip() else text
+    # 同行：「摘要：」后多写了一个「摘要」（可有尾随空格），合并为单一标签
+    t2 = re.sub(r"^摘要\s*[：:]\s+摘要\s*", "摘要：", t, count=1)
+    if t2 != t:
+        return t2.lstrip() if t2.strip() else text
+    t = t2
+    lines = [ln.rstrip("\r") for ln in t.splitlines()]
+    if (
+        len(lines) >= 2
+        and re.match(r"^摘要\s*[：:]\s*$", lines[0].strip())
+        and re.match(r"^摘要\s*$", lines[1].strip())
+    ):
+        merged = "\n".join([lines[0]] + lines[2:]).strip()
+        return merged if merged else text
+    return t
+
+
+def postprocess_model_output_quality(text: str) -> str:
+    """
+    模型输出确定性后处理：方括注全半角与混用修复、[n、k] 式引用拆成多注、
+    注内非标连字符统一为 ASCII「-」、中文后英文术语缺左括号等常见版式问题。
+    不依赖原文，可安全重复执行。
+    """
+    if not text or not text.strip():
+        return text
+    t = text.replace("\u00a0", " ")
+    t = _pp_normalize_citation_bracket_chars(t)
+    t = _pp_normalize_mixed_bracket_citations(t)
+    t = _pp_split_citation_enumeration_in_brackets(t)
+    t = _pp_normalize_hyphens_in_numeric_brackets(t)
+    t = _pp_fix_orphan_latin_before_closing_paren(t)
+    t = _pp_fix_decimal_percent_spacing(t)
+    return t
+
+
+def _pp_normalize_citation_bracket_chars(text: str) -> str:
+    """全角方括号 U+FF3B/U+FF3D → 半角，便于后续规则。"""
+    return text.replace("\uff3b", "[").replace("\uff3d", "]")
+
+
+def _pp_normalize_mixed_bracket_citations(text: str) -> str:
+    """修复 [n］、［n]、［n］及 [ n ] 等混用或多余空格。"""
+    t = text
+    for _ in range(8):
+        nt = re.sub(r"\[(\d+)\s*\uff3d", r"[\1]", t)
+        nt = re.sub(r"\uff3b\s*(\d+)\s*\]", r"[\1]", nt)
+        nt = re.sub(r"\uff3b\s*(\d+)\s*\uff3d", r"[\1]", nt)
+        nt = re.sub(r"\[\s*(\d+(?:\s*-\s*\d+)?)\s*\]", r"[\1]", nt)
+        if nt == t:
+            break
+        t = nt
+    return t
+
+
+def _pp_split_citation_enumeration_in_brackets(text: str) -> str:
+    """[5-6、8] → [5-6][8]；仅当方括号内为顿号分隔的纯数字/区间时生效。"""
+
+    def repl(m: re.Match[str]) -> str:
+        inner = m.group(1).strip()
+        if "、" not in inner:
+            return m.group(0)
+        parts = [p.strip() for p in inner.split("、")]
+        if len(parts) < 2 or not all(re.match(r"^\d+(?:-\d+)?$", p) for p in parts):
+            return m.group(0)
+        return "".join(f"[{p}]" for p in parts)
+
+    return re.sub(r"\[((?:\d+(?:-\d+)?)(?:、\d+(?:-\d+)?)+)\]", repl, text)
+
+
+def _pp_normalize_hyphens_in_numeric_brackets(text: str) -> str:
+    """[4−7]、[1—4] 等注内 Unicode 连字符→ ASCII「-」（仅以数字开头的注文）。"""
+
+    def inner_fix(inner: str) -> str:
+        s = inner.strip()
+        if not re.match(r"^\d", s):
+            return inner
+        out = inner
+        for _ in range(4):
+            nxt = re.sub(r"(\d)\s*[\u2212\u2013\u2014]\s*(\d)", r"\1-\2", out)
+            if nxt == out:
+                break
+            out = nxt
+        return out
+
+    def repl(m: re.Match[str]) -> str:
+        return "[" + inner_fix(m.group(1)) + "]"
+
+    return re.sub(r"\[([^\]]+)\]", repl, text)
+
+
+def _pp_fix_orphan_latin_before_closing_paren(text: str) -> str:
+    """
+    汉字后直接英文词 + 右括号（缺左括号），如「困惑度 Perplexity），」。
+    英文词总长度≥6（首字母大写 + 至少 5 个后续字符），降低误伤 AIGC、AI 等短词。
+    """
+    return re.sub(
+        r"(?<=[\u4e00-\u9fff])\s+([A-Z][A-Za-z0-9]{5,})\s*[）\)](?=[，。；、,\.\!\?\s\n]|$)",
+        r"（\1）",
+        text,
+    )
+
+
+def _pp_fix_decimal_percent_spacing(text: str) -> str:
+    """修复模型在百分数中插入的多余空格，如 22. 5%、18． 0 %。"""
+    t = text
+    for _ in range(6):
+        nxt = re.sub(r"(\d)(?:\.|．)\s+(\d+)\s*(?=%)", r"\1.\2", t)
+        if nxt == t:
+            break
+        t = nxt
+    return t
+
+
+def strip_inline_citation_markers(text: str) -> Tuple[str, int]:
+    """
+    在独立成行「参考文献」标题之前，去掉正文中 [1]、[2-3][4] 等文献角标（避免改写乱码）。
+    「参考文献」及之后的列表（含 [1] 作者…）不处理。
+    """
+    if not (text or "").strip():
+        return text, 0
+    m = re.search(r"^\s*参考文献\s*$", text, re.MULTILINE)
+    head, tail = (text[: m.start()], text[m.start() :]) if m else (text, "")
+    markers = re.findall(r"\[\d+(?:-\d+)?\]", head)
+    if not markers:
+        return text, 0
+    new_head = re.sub(r"(?:\[\d+(?:-\d+)?\]\s*)+", "", head)
+    new_head = re.sub(r" {2,}", " ", new_head)
+    new_full = new_head + tail
+    return new_full, len(markers)
 
 
 def _heading_number_prefix(s: str) -> Optional[str]:
@@ -394,6 +629,39 @@ def _is_too_similar_rewrite(original: str, reduced: str) -> bool:
     return False
 
 
+def _plain_norm_similarity(a: str, b: str) -> float:
+    o = re.sub(r"\s+", "", (a or "").strip())
+    r = re.sub(r"\s+", "", (b or "").strip())
+    if not o or not r:
+        return 0.0
+    return float(difflib.SequenceMatcher(None, o, r).ratio())
+
+
+def _polish_output_passes_review(original: str, polished: str) -> bool:
+    """
+    润色结果审查：字数差须在比例内；长段相似度不得过高（几乎未改）或过低（偏离过大）。
+    """
+    o = (original or "").strip()
+    p = (polished or "").strip()
+    if not p or p == o:
+        return False
+    ow = count_words(o)
+    pw = count_words(p)
+    ratio = _plain_norm_similarity(o, p)
+    if ow < 14:
+        return ratio < 0.998 and bool(p)
+    max_wd = max(10, int(ow * POLISH_REVIEW_WORD_DELTA_RATIO))
+    if abs(ow - pw) > max_wd:
+        return False
+    ons = re.sub(r"\s+", "", o)
+    L = len(ons)
+    if L >= 90 and ratio >= POLISH_SIMILARITY_MAX_RATIO:
+        return False
+    if L >= 120 and ratio < POLISH_SIMILARITY_MIN_RATIO:
+        return False
+    return True
+
+
 def _is_reduce_meta_wordcount_line(s: str) -> bool:
     """
     模型常把统计行、任务标签行混进正文，须整行剔除。
@@ -617,6 +885,7 @@ def sanitize_reduce_output(original: str, reduced: str) -> str:
     t = _strip_explicit_reasoning_noise(t)
     t = _strip_reduce_meta_noise(t)
     t = _strip_reduce_chinese_preamble(t)
+    t = _strip_reviewer_prompt_echo(t)
     t = _strip_leading_english_meta_preface(t, original)
     # 原文未出现“文章结构安排”时，清理模型擅自追加的结构分析段
     if (
@@ -722,9 +991,11 @@ def finalize_reduce_text(original: str, reduced: str) -> str:
     if not reduced:
         return reduced
     x = sanitize_reduce_output(original, reduced)
+    x = strip_runaway_leading_abstract_labels(x)
     x = ensure_leading_section_heading_line(original, x)
     x = _split_glued_heading_body(original, x)
-    return normalize_heading_spacing_after_model(original, x)
+    x = normalize_heading_spacing_after_model(original, x)
+    return postprocess_model_output_quality(x)
 
 
 class RegisterRequest(BaseModel):
@@ -752,7 +1023,80 @@ class UserInfo(BaseModel):
 
 class PointsState(BaseModel):
     points: int
+    dailyFreePoints: int = 0
+    writableWords: int = 0
+    balanceYuan: float = 0.0
+    membershipTier: str = "none"
+    adWatchesToday: int = 0
+    adDailyLimit: Optional[int] = 10
+    dailyFreeCap: int = 888
+    dailyFreeGrant: int = 888
+    adRewardGrant: int = 2888
+    signInGrant: int = 888
     signIn: Dict[str, Any]
+
+
+class MembershipActivateRequest(BaseModel):
+    tier: Literal["monthly", "premium"]
+    trialDays: Optional[int] = None
+
+
+class MembershipActivateResponse(BaseModel):
+    ok: bool
+    tier: str
+    grantedPoints: int
+    writableWords: int
+    reason: Optional[str] = None
+
+
+class AdminRedeemCodeCreateRequest(BaseModel):
+    rewardKind: Literal["points", "balance_yuan"]
+    amount: float
+    scope: Literal["all", "single"]
+    restrictUserId: Optional[str] = None
+    restrictEmail: Optional[EmailStr] = None
+    maxUses: int = 1
+    expiresAt: Optional[datetime] = None
+    quantity: int = 1
+
+
+class RedeemUseRequest(BaseModel):
+    code: str = Field(..., min_length=4, max_length=40)
+
+
+class RedeemUseResponse(BaseModel):
+    ok: bool
+    reason: str
+    points: Optional[int] = None
+    balanceYuan: Optional[float] = None
+
+
+class AdWatchTicketCreateResponse(BaseModel):
+    ticketId: str
+    watchUrl: str
+    expiresAt: str
+
+
+class AdWatchTicketStatusResponse(BaseModel):
+    status: str
+    points: Optional[int] = None
+
+
+class AdWatchQrResponse(BaseModel):
+    imageBase64: str
+    watchUrl: str
+
+
+class AdWatchCompleteRequest(BaseModel):
+    ticketId: str
+    sig: str
+    exp: int
+
+
+class AdWatchCompleteResponse(BaseModel):
+    ok: bool
+    reason: str
+    points: Optional[int] = None
 
 
 class SigninResponse(BaseModel):
@@ -807,9 +1151,12 @@ class QrLoginApproveRequest(BaseModel):
     password: str
 
 
-def compute_signin_reward(streak: int) -> int:
-    # 与前端 rewardState 逻辑保持一致：10, 12, 14...上限 30
-    return min(30, 10 + max(0, streak - 1) * 2)
+def compute_signin_reward(streak: int, tier: str = "none") -> int:
+    """每日签到奖励（按会员档位）。"""
+    from pricing import signin_grant_for_tier
+
+    _ = streak
+    return signin_grant_for_tier(tier)
 
 
 TaskMode = Literal["polish", "reduce"]
@@ -845,7 +1192,7 @@ class ExportResponse(BaseModel):
 
 
 class FeedbackCreateRequest(BaseModel):
-    category: Literal["bug", "feature", "experience", "other"] = "experience"
+    category: Literal["bug", "feature", "experience", "other", "membership"] = "experience"
     content: str
     contact: Optional[str] = None
 
@@ -856,14 +1203,69 @@ class FeedbackItem(BaseModel):
     userEmail: str
     category: str
     content: str
+    adminReply: Optional[str] = None
     contact: Optional[str] = None
     status: Literal["open", "processing", "closed"] = "open"
     createdAt: str
     updatedAt: str
 
 
-class FeedbackStatusUpdateRequest(BaseModel):
-    status: Literal["open", "processing", "closed"]
+class FeedbackAdminPatchRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+    status: Optional[Literal["open", "processing", "closed"]] = None
+    admin_reply: Optional[str] = Field(default=None, alias="adminReply")
+
+
+def _feedback_item_from_row(db: Session, row: _entities.Feedback) -> FeedbackItem:
+    owner = auth_repo.get_user_by_id(db, row.user_id)
+    return FeedbackItem(
+        id=row.id,
+        userId=row.user_id,
+        userEmail=owner.email if owner else "",
+        category=row.category,
+        content=row.content,
+        adminReply=row.admin_reply,
+        contact=row.contact,
+        status=row.status,  # type: ignore[arg-type]
+        createdAt=row.created_at.isoformat(),
+        updatedAt=row.updated_at.isoformat(),
+    )
+
+
+FEEDBACK_IMAGE_MAX_BYTES = 4 * 1024 * 1024
+
+
+def _feedback_uploads_dir() -> Path:
+    d = Path(__file__).resolve().parent / "static" / "feedback-uploads"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _detect_feedback_image_ext(blob: bytes) -> Optional[str]:
+    if len(blob) < 12:
+        return None
+    if blob.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if blob.startswith(b"\x89PNG\r\n\x1a\n") or blob.startswith(b"\x89PNG\n"):
+        return ".png"
+    if blob.startswith(b"GIF87a") or blob.startswith(b"GIF89a"):
+        return ".gif"
+    if blob[:4] == b"RIFF" and blob[8:12] == b"WEBP":
+        return ".webp"
+    return None
+
+
+async def _save_feedback_uploaded_image(upload: UploadFile) -> str:
+    raw = await upload.read()
+    if len(raw) > FEEDBACK_IMAGE_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="Image too large (max 4MB)")
+    ext = _detect_feedback_image_ext(raw)
+    if not ext:
+        raise HTTPException(status_code=400, detail="Unsupported image type")
+    name = f"{uuid.uuid4().hex}{ext}"
+    dest = _feedback_uploads_dir() / name
+    dest.write_bytes(raw)
+    return f"/static/feedback-uploads/{name}"
 
 
 class DailyMetricPoint(BaseModel):
@@ -879,6 +1281,8 @@ class AdminOverviewResponse(BaseModel):
     totalAdViews: int
     totalWordsQuota: int
     usedWordsQuota: int
+    openFeedbackCount: int
+    totalTasksCount: int
     dailyMetrics: List[DailyMetricPoint]
     users: List[Dict[str, Any]]
 
@@ -927,6 +1331,53 @@ class Settings:
 
 
 settings = Settings()
+
+
+def _ad_watch_public_base() -> str:
+    return (os.getenv("AD_WATCH_PUBLIC_BASE") or "http://127.0.0.1:8000").rstrip("/")
+
+
+def _ad_watch_reward_points() -> int:
+    return pricing_ad_watch_reward_points()
+
+
+def _model_inference_disabled() -> bool:
+    return os.getenv("MODEL_INFERENCE_DISABLED", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _ad_watch_hmac_secret() -> str:
+    s = (os.getenv("AD_WATCH_HMAC_SECRET") or "").strip()
+    return s or "dev-ad-watch-hmac-change-me"
+
+
+def _ad_watch_ttl_seconds() -> int:
+    return int((os.getenv("AD_WATCH_TICKET_TTL_SECONDS") or "900").strip() or "900")
+
+
+def _ad_watch_sign(ticket_id: str, user_id: str, exp_unix: int) -> str:
+    msg = f"{ticket_id}|{user_id}|{exp_unix}".encode("utf-8")
+    return hmac.new(_ad_watch_hmac_secret().encode("utf-8"), msg, hashlib.sha256).hexdigest()
+
+
+def _ad_watch_verify(ticket_id: str, user_id: str, exp_unix: int, sig: str) -> bool:
+    expect = _ad_watch_sign(ticket_id, user_id, exp_unix)
+    return hmac.compare_digest(expect, sig)
+
+
+def _ad_watch_qr_png_base64(url: str) -> str:
+    import qrcode
+
+    buf = io.BytesIO()
+    img = qrcode.make(url, box_size=6, border=2)
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
 LOCAL_CAPTCHA_TTL_SECONDS = 180
 LOCAL_CAPTCHA_JWT_TYP = "lc"
 QR_LOGIN_TTL_SECONDS = 180
@@ -1090,6 +1541,22 @@ async def get_current_user(
     return user
 
 
+def _admin_email_allowlist() -> Optional[set[str]]:
+    return admin_email_allowlist()
+
+
+async def require_admin_user(
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    allow = _admin_email_allowlist()
+    if allow is None:
+        return user
+    email = (user.get("email") or "").strip().lower()
+    if email not in allow:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access denied")
+    return user
+
+
 DEFAULT_WORD_QUOTA = 120000
 
 # 开发环境默认账号：避免你刚启动/重启后因为内存数据丢失导致无法登录
@@ -1098,9 +1565,91 @@ DEFAULT_PASSWORD = "poki123"
 DEFAULT_NICKNAME = "管理员"
 
 
+def _collapse_reference_paragraphs(parts: List[str]) -> List[str]:
+    """
+    从首个以「参考文献」开头的段落起合并到列表末尾，使参考文献在 UI 中只占一个对比框。
+    空段落会剔除；合并段之间用双换行拼接，以贴近常见排版。
+    """
+    if not parts:
+        return parts
+    idx = -1
+    for i, p in enumerate(parts):
+        s = p.strip()
+        if s and re.match(r"^参考文献\s*", s):
+            idx = i
+            break
+    if idx < 0:
+        return [p.strip() for p in parts if p.strip()]
+    head = [p.strip() for p in parts[:idx] if p.strip()]
+    tail = [p.strip() for p in parts[idx:] if p.strip()]
+    if not tail:
+        return head
+    merged = "\n\n".join(tail)
+    return head + ([merged] if merged else [])
+
+
+def _split_inline_keyword_paragraph(p: str) -> List[str]:
+    """
+    若一段末尾以换行或空格接上「关键词：…」「关键字：…」，拆成两段，
+    便于第二段单独标记为跳过模型改写（与 _detach_inline_keyword_suffix 规则对齐）。
+    亦处理「…管理关键词：」等关键词前无空格、与正文紧贴的常见排版。
+    """
+    s = (p or "").strip()
+    if not s:
+        return []
+    lines = s.splitlines()
+    for j in range(1, len(lines)):
+        ln = lines[j].strip()
+        if re.match(r"^(关键词|关键字)\s*[：:]", ln):
+            head = "\n".join(lines[:j]).strip()
+            tail = "\n".join(lines[j:]).strip()
+            if len(head) >= 8 and len(tail) >= 4:
+                return [head, tail]
+            break
+    for label in ("关键词", "关键字"):
+        m = re.search(rf"(?s)^(.+?)(\s+{label}\s*[：:].+)$", s)
+        if m and len(m.group(1).strip()) >= 8 and len(m.group(2).strip()) >= 4:
+            return [m.group(1).rstrip(), m.group(2).strip()]
+    # 句末标点后的「关键词：」或全文最后一次「关键词：」（紧贴前文无空格）
+    for label in ("关键词", "关键字"):
+        m = re.search(rf"(?s)^(.+?)([。！？…；;]\s*{label}\s*[：:].+)$", s)
+        if m and len(m.group(1).strip()) >= 8 and len(m.group(2).strip()) >= 4:
+            punct, rest = m.group(2)[0], m.group(2)[1:].lstrip()
+            return [(m.group(1).rstrip() + punct).rstrip(), rest]
+    best: Optional[Tuple[int, str, str]] = None
+    for label in ("关键词", "关键字"):
+        for m in re.finditer(rf"{label}\s*[：:]", s):
+            pos = m.start()
+            if pos < 8:
+                continue
+            head = s[:pos].rstrip()
+            tail = s[pos:].strip()
+            if len(head) < 8 or len(tail) < 4:
+                continue
+            if "；" in tail or ";" in tail or "、" in tail or len(tail) <= 220:
+                cand = (pos, head, tail)
+                if best is None or pos >= best[0]:
+                    best = cand
+    if best:
+        return [best[1], best[2]]
+    return [s]
+
+
+def _expand_paragraphs_with_inline_keywords(parts: List[str]) -> List[str]:
+    out: List[str] = []
+    for p in parts:
+        out.extend(_split_inline_keyword_paragraph(p))
+    return [x for x in out if x.strip()]
+
+
+def _finalize_paragraph_list(parts: List[str]) -> List[str]:
+    """先拆出段末关键词块，再合并参考文献，供建任务分段使用。"""
+    return _collapse_reference_paragraphs(_expand_paragraphs_with_inline_keywords(parts))
+
+
 def split_into_paragraphs(req: CreateTaskRequest) -> List[str]:
     if req.paragraphs and len(req.paragraphs) > 0:
-        return [p.strip() for p in req.paragraphs if p.strip()]
+        return _finalize_paragraph_list([p.strip() for p in req.paragraphs if p.strip()])
 
     if not req.raw_text:
         return []
@@ -1139,7 +1688,7 @@ def split_into_paragraphs(req: CreateTaskRequest) -> List[str]:
             second_first_line = second_lines[0] if second_lines else ""
         if looks_like_paper_title_line(first, second_first_line):
             blocks = blocks[1:]
-        return blocks
+        return _finalize_paragraph_list(blocks)
 
     # 仅有单换行（无空行分段）时：按“段落”更贴近论文排版的方式做合并。
     # 目标：把类似“摘要：/关键词：”这类只起到标记作用的行，合并到后续正文所在段落，
@@ -1152,8 +1701,9 @@ def split_into_paragraphs(req: CreateTaskRequest) -> List[str]:
 
     def is_label_line(s: str) -> bool:
         # 摘要/关键词/引言等：常见就是“摘要：”单独一行
-        # 注意：这里刻意“不把“参考文献”算作可合并标记行”，
-        # 否则它会被并入后续第一条条目，导致 UI 上无法单独成框。
+        # 「参考文献：」若以短行+冒号规则会被误判为标记行并挂到 [1] 上，需排除。
+        if re.match(r"^参考文献\s*", s):
+            return False
         label_words = ["摘要", "关键词", "引言", "结论", "方法", "结果", "讨论", "致谢"]
         for w in label_words:
             if re.fullmatch(rf"{w}\s*[：:]*\s*", s):
@@ -1184,6 +1734,18 @@ def split_into_paragraphs(req: CreateTaskRequest) -> List[str]:
         curr = lines[i]
         next_line = lines[i + 1] if i + 1 < len(lines) else None
 
+        # 参考文献：标题与后续各条合并为一段，避免每条单独一框
+        if is_reference_heading(curr):
+            buf_ref: List[str] = [curr]
+            i += 1
+            while i < len(lines):
+                buf_ref.append(lines[i])
+                i += 1
+            merged_ref = "\n".join(buf_ref).strip()
+            if merged_ref:
+                paragraphs.append(merged_ref)
+            continue
+
         # 标记行：先缓存起来，等遇到下一行正文再一起拼成段落
         if is_label_line(curr) or is_short_title_prefix(curr, next_line):
             pending_prefix = (pending_prefix + ("\n" if pending_prefix else "") + curr).strip()
@@ -1203,7 +1765,7 @@ def split_into_paragraphs(req: CreateTaskRequest) -> List[str]:
             nxt = lines[i]
             if is_chapter_heading_line(nxt) or is_label_line(nxt):
                 break
-            # 参考文献标题：让它从上一段“断开”，单独成为一段框
+            # 下一行起为「参考文献」整块：在此结束当前段，避免把标题并入正文
             if is_reference_heading(nxt):
                 break
             # 如果下一行也像“短标题前缀（后接摘要/关键词等）”，也不继续吸收
@@ -1216,7 +1778,7 @@ def split_into_paragraphs(req: CreateTaskRequest) -> List[str]:
         if paragraph:
             paragraphs.append(paragraph)
 
-    return paragraphs
+    return _finalize_paragraph_list(paragraphs)
 
 
 def mock_polish(mode: TaskMode, original: str) -> str:
@@ -1225,7 +1787,7 @@ def mock_polish(mode: TaskMode, original: str) -> str:
         if sp:
             prefix, body, suffix = sp
             new_body = f"{body}（优化示例）" if body.strip() else body
-            out = prefix + new_body
+            out = prefix + strip_redundant_leading_abstract_label(prefix, new_body)
             if suffix:
                 out += f"\n{suffix}"
             return out
@@ -1257,8 +1819,11 @@ def is_skip_polish_or_reduce(original: str) -> bool:
     if re.match(r"^参考文献\s*[:：]?\s*.*$", first_line):
         return True
 
-    # 摘要/关键词/致谢：按你的需求通常也不做降重/润色
-    if re.match(r"^(摘要|关键词|致谢)\s*[:：]?\s*$", first_line):
+    # 摘要/致谢：仅标签行、无正文时不做降重/润色
+    if re.match(r"^(摘要|致谢)\s*[:：]?\s*$", first_line):
+        return True
+    # 「关键词：…」「关键字：…」整段（含分拆后的关键词段）保持原样
+    if re.match(r"^(关键词|关键字)(\s*[：:].*|\s*)$", first_line):
         return True
 
     # 大标题/展望类：仅当“整段只有标题”时跳过；若后面已有正文/条目，不应跳过
@@ -1280,36 +1845,101 @@ MODEL_DTYPE = os.getenv("LOCAL_MODEL_DTYPE", "auto").strip().lower()
 REDUCE_TEMPERATURE = float(os.getenv("LOCAL_REDUCE_TEMPERATURE", "0.78"))
 REDUCE_TOP_P = float(os.getenv("LOCAL_REDUCE_TOP_P", "0.93"))
 REDUCE_NUM_PREDICT = int(os.getenv("LOCAL_REDUCE_MAX_NEW_TOKENS", "1024"))
+# 整段产出与原文字数差超过该阈值、或与原文几乎相同时，追加重试生成
+REDUCE_RETRY_MAX_WORD_DELTA = int(os.getenv("REDUCE_RETRY_MAX_WORD_DELTA", "30"))
+# 兼容旧名：REDUCE_WORDCOUNT_MISMATCH_RETRIES 表示「额外次数」，新变量表示「含首次在内的总生成次数」
+_reduce_total = os.getenv("REDUCE_REVIEW_MAX_ATTEMPTS", "").strip()
+if _reduce_total:
+    REDUCE_REVIEW_MAX_ATTEMPTS = max(1, int(_reduce_total))
+else:
+    REDUCE_REVIEW_MAX_ATTEMPTS = max(
+        1, int(os.getenv("REDUCE_WORDCOUNT_MISMATCH_RETRIES", "2")) + 1
+    )
+REDUCE_WORDCOUNT_MISMATCH_RETRIES = max(0, REDUCE_REVIEW_MAX_ATTEMPTS - 1)  # 保留供内部注释与旧逻辑理解
+# 降 AIGC：长段若与原文相似度过低（可能跑题/乱改），与字数、过近一并纳入重试条件；设为 0 关闭
+REDUCE_SIMILARITY_MIN_RATIO = float(os.getenv("REDUCE_SIMILARITY_MIN_RATIO", "0"))
+# 降 AIGC：按标点切段时每段最大字符数（依次请求模型后再拼接）
+REDUCE_CHUNK_MAX_CHARS = int(os.getenv("REDUCE_CHUNK_MAX_CHARS", "70"))
 # 润色：略低 temperature，偏稳；仍可单独调
 POLISH_TEMPERATURE = float(os.getenv("LOCAL_POLISH_TEMPERATURE", "0.58"))
 POLISH_TOP_P = float(os.getenv("LOCAL_POLISH_TOP_P", "0.9"))
 POLISH_NUM_PREDICT = int(os.getenv("LOCAL_POLISH_MAX_NEW_TOKENS", "1024"))
+# 润色：服务端按字数差与文本相似度审查，未达标则同一段最多再 POLISH_REVIEW_MAX_ATTEMPTS-1 次
+POLISH_REVIEW_MAX_ATTEMPTS = max(1, int(os.getenv("POLISH_REVIEW_MAX_ATTEMPTS", "3")))
+POLISH_REVIEW_WORD_DELTA_RATIO = float(os.getenv("POLISH_REVIEW_WORD_DELTA_RATIO", "0.38"))
+POLISH_SIMILARITY_MAX_RATIO = float(os.getenv("POLISH_SIMILARITY_MAX_RATIO", "0.989"))
+POLISH_SIMILARITY_MIN_RATIO = float(os.getenv("POLISH_SIMILARITY_MIN_RATIO", "0.76"))
 # 第二遍「审稿」：从跑偏输出中只抽正文（可选）
 REVIEWER_ENABLED = os.getenv("LOCAL_REVIEWER_ENABLED", "0") == "1"
 REVIEWER_MODEL = os.getenv("LOCAL_REVIEWER_MODEL", DEFAULT_RUNTIME_MODEL)
 
-# 云 GPU：OpenAI 兼容 Chat Completions（如 vLLM / TGI）。设置后不再加载本地权重。
+# 远程推理：OpenAI 兼容 Chat Completions（推荐阿里云百炼 compatible-mode / vLLM / AutoDL 等）。
+# 设置 REMOTE_INFERENCE_URL 后不再加载本地权重。
 REMOTE_INFERENCE_URL = os.getenv("REMOTE_INFERENCE_URL", "").strip()
-REMOTE_INFERENCE_MODEL = os.getenv("REMOTE_INFERENCE_MODEL", "kiterforth").strip()
-REMOTE_INFERENCE_API_KEY = os.getenv("REMOTE_INFERENCE_API_KEY", "").strip()
+REMOTE_INFERENCE_MODEL = os.getenv(
+    "REMOTE_INFERENCE_MODEL", "qwen2.5-7b-instruct-306e22f5efa6-1"
+).strip()
+REMOTE_INFERENCE_API_KEY = (
+    os.getenv("REMOTE_INFERENCE_API_KEY", "").strip()
+    or os.getenv("DASHSCOPE_API_KEY", "").strip()
+)
 REMOTE_INFERENCE_TIMEOUT = int(os.getenv("REMOTE_INFERENCE_TIMEOUT", "300"))
-# 新微调 merged 模型可仅输入正文段落直接输出改写段落：
-# - 显式设置 1/true/yes：强制开启简化调用
-# - 显式设置 0/false/no：强制关闭
-# - 未设置：当远程模型名为 merged 时自动开启
-SIMPLE_PARAGRAPH_REWRITE = os.getenv("SIMPLE_PARAGRAPH_REWRITE", "").strip().lower()
+# 百炼 Qwen3 等：关闭思考链，避免输出  块（compatible-mode 对应 extra_body.enable_thinking）
+REMOTE_INFERENCE_ENABLE_THINKING = os.getenv("REMOTE_INFERENCE_ENABLE_THINKING", "0") == "1"
+# 1=只发段落正文（适合已微调部署）；0=与本地相同，附带 system 提示词（适合通用 instruct）
+REMOTE_INFERENCE_BODY_ONLY = os.getenv("REMOTE_INFERENCE_BODY_ONLY", "1") == "1"
+# 远程降重/润色单次 completion 的 max_tokens 上限（中文长段若过小易被截断，接在下一段会显得像「幻觉」）
+REMOTE_REDUCE_MAX_TOKENS = int(os.getenv("REMOTE_REDUCE_MAX_TOKENS", "3072"))
 
 
 def _use_remote_inference() -> bool:
     return bool(REMOTE_INFERENCE_URL)
 
 
-def _use_simple_paragraph_rewrite() -> bool:
-    if SIMPLE_PARAGRAPH_REWRITE in ("1", "true", "yes", "on"):
-        return True
-    if SIMPLE_PARAGRAPH_REWRITE in ("0", "false", "no", "off"):
-        return False
-    return _use_remote_inference() and REMOTE_INFERENCE_MODEL.lower() == "merged"
+def _resolve_runtime_model(model: Optional[str] = None, *, mode: str = "reduce") -> str:
+    """远程推理固定用 REMOTE_INFERENCE_MODEL，避免把本地别名 @kiterforth 发给百炼。"""
+    if _use_remote_inference():
+        return REMOTE_INFERENCE_MODEL
+    explicit = (model or "").strip()
+    if explicit:
+        return explicit
+    return RUNTIME_REDUCE_MODEL if mode == "reduce" else RUNTIME_POLISH_MODEL
+
+
+def _is_dashscope_compatible(url: str) -> bool:
+    return "dashscope.aliyuncs.com" in (url or "").lower()
+
+
+def _normalize_remote_chat_url(url: str) -> str:
+    """补全为 POST /v1/chat/completions（支持只填 AutoDL 映射根，如 https://xxx:8443）。"""
+    u = (url or "").strip()
+    if not u:
+        return u
+    if "chat/completions" in u:
+        return u
+    base = u.rstrip("/")
+    low = base.lower()
+    if low.endswith("/v1"):
+        return base + "/chat/completions"
+    return base + "/v1/chat/completions"
+
+
+_REMOTE_HTTP_CLIENT: Any = None
+_REMOTE_HTTP_LOCK = threading.Lock()
+
+
+def _get_remote_http_client() -> Any:
+    """复用 HTTPS 连接，减少 AutoDL 等远程推理每次请求的 TLS 握手开销。"""
+    global _REMOTE_HTTP_CLIENT
+    import httpx
+
+    with _REMOTE_HTTP_LOCK:
+        if _REMOTE_HTTP_CLIENT is None:
+            _REMOTE_HTTP_CLIENT = httpx.Client(
+                timeout=httpx.Timeout(REMOTE_INFERENCE_TIMEOUT, connect=30.0),
+                limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+            )
+        return _REMOTE_HTTP_CLIENT
 
 
 def _remote_chat_sync(
@@ -1321,11 +1951,21 @@ def _remote_chat_sync(
     top_p: float = 0.9,
     num_predict: Optional[int] = None,
 ) -> str:
-    """POST OpenAI 兼容 /v1/chat/completions；云 GPU 上单独部署 kiterforth 时指向该地址即可。"""
+    """
+    POST OpenAI 兼容 /v1/chat/completions（百炼 compatible-mode / vLLM / AutoDL 等）。
+    非百炼端点：远程微调模型约定合并 system 进 user，避免独立 system 干扰文段改写。
+    百炼 compatible-mode：使用标准 system + user 消息；Qwen 系列默认 enable_thinking=false。
+    """
     messages: List[Dict[str, str]] = []
+    merge_system = not _is_dashscope_compatible(REMOTE_INFERENCE_URL)
     if system and system.strip():
-        messages.append({"role": "system", "content": system.strip()})
-    messages.append({"role": "user", "content": prompt})
+        if merge_system:
+            messages.append({"role": "user", "content": f"{system.strip()}\n\n{prompt}"})
+        else:
+            messages.append({"role": "system", "content": system.strip()})
+            messages.append({"role": "user", "content": prompt})
+    else:
+        messages.append({"role": "user", "content": prompt})
     payload: Dict[str, Any] = {
         "model": REMOTE_INFERENCE_MODEL,
         "messages": messages,
@@ -1333,21 +1973,25 @@ def _remote_chat_sync(
         "top_p": float(top_p),
         "max_tokens": int(num_predict if num_predict is not None else REDUCE_NUM_PREDICT),
     }
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(
-        REMOTE_INFERENCE_URL,
-        data=body,
-        method="POST",
-        headers={"Content-Type": "application/json; charset=utf-8"},
-    )
+    if _is_dashscope_compatible(REMOTE_INFERENCE_URL):
+        payload["enable_thinking"] = REMOTE_INFERENCE_ENABLE_THINKING
+    endpoint = _normalize_remote_chat_url(REMOTE_INFERENCE_URL)
+    import httpx
+
+    client = _get_remote_http_client()
+    h = {"Content-Type": "application/json; charset=utf-8"}
     if REMOTE_INFERENCE_API_KEY:
-        req.add_header("Authorization", f"Bearer {REMOTE_INFERENCE_API_KEY}")
+        h["Authorization"] = f"Bearer {REMOTE_INFERENCE_API_KEY}"
     try:
-        with urllib.request.urlopen(req, timeout=REMOTE_INFERENCE_TIMEOUT) as resp:
-            raw = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode("utf-8", errors="replace")[:2000]
-        print("[remote_inference] HTTPError:", e.code, err_body)
+        r = client.post(endpoint, json=payload, headers=h)
+        r.raise_for_status()
+        raw = r.json()
+    except httpx.HTTPStatusError as e:
+        body = (e.response.text or "")[:2000] if e.response is not None else ""
+        print("[remote_inference] HTTPError:", e.response.status_code if e.response else "?", body)
+        return ""
+    except httpx.RequestError as e:
+        print("[remote_inference] transport:", str(e))
         return ""
     except Exception as e:
         print("[remote_inference] error:", str(e))
@@ -1477,7 +2121,7 @@ def _local_chat_sync(
 
 def select_runtime_model(mode: str, task_id: str, idx: int, original: str) -> str:
     _ = (task_id, idx, original)
-    return RUNTIME_REDUCE_MODEL if mode == "reduce" else RUNTIME_POLISH_MODEL
+    return _resolve_runtime_model(mode=mode)
 
 
 async def model_chat_for_text(
@@ -1489,6 +2133,9 @@ async def model_chat_for_text(
     top_p: float = 0.9,
     num_predict: Optional[int] = None,
 ) -> str:
+    if _model_inference_disabled():
+        print("[model_chat_for_text] MODEL_INFERENCE_DISABLED=1, skip remote/local inference")
+        return ""
     try:
         if _use_remote_inference():
             return await asyncio.to_thread(
@@ -1657,6 +2304,24 @@ def _strip_reduce_chinese_preamble(text: str) -> str:
     return t
 
 
+def _strip_reviewer_prompt_echo(text: str) -> str:
+    """
+    reviewer_fix_chinese_strip_english 等在 user 里拼接「【原文】/【草稿】」；
+    少数模型会把整段提示标签复述进输出，污染参考文献等块。
+    """
+    if "【原文】" not in text and "【草稿】" not in text:
+        return text
+    out_lines: List[str] = []
+    for ln in text.splitlines():
+        s = ln.strip()
+        if s.startswith("【原文】") or s.startswith("【草稿】"):
+            continue
+        if re.match(r"^（请将其中英文改为中文）\s*$", s):
+            continue
+        out_lines.append(ln)
+    return "\n".join(out_lines).strip()
+
+
 WORDCOUNT_TOLERANCE_RATIO = 0.12  # 允许的相对偏差
 WORDCOUNT_TOLERANCE_ABS = 25  # 允许的最大绝对偏差
 
@@ -1751,15 +2416,15 @@ def build_reduce_system_and_user(
     return system, user
 
 
-def _simple_mode_num_predict(text: str, default_cap: int) -> int:
+def _remote_segment_num_predict(text: str, default_cap: int) -> int:
     """
-    新 merged 简化模式下，输出通常与输入段落同量级，不需要 1000+ token。
-    缩小上限可显著降低首段等待与超时概率。
+    远程「文段进文段出」：按原文字数估算 max_tokens，且受 REMOTE_REDUCE_MAX_TOKENS 封顶。
+    旧版用 LOCAL_REDUCE_MAX_NEW_TOKENS（常 1024）封顶，长段中文易被截断，导出拼接后像跑题/幻觉。
     """
     wc = max(1, count_words(text))
-    # 经验值：给到原文字数约 1.8 倍 token 上限，并设置上下界
-    est = int(wc * 1.8)
-    return max(96, min(default_cap, max(192, est)))
+    est = int(wc * 2.2)
+    ceiling = max(default_cap, REMOTE_REDUCE_MAX_TOKENS)
+    return max(96, min(ceiling, max(192, est)))
 
 
 async def reviewer_extract_body(original: str, draft: str) -> str:
@@ -1865,28 +2530,54 @@ def build_polish_system_and_user(text: str) -> Tuple[str, str]:
 
 async def polish_with_model(original: str, *, model: Optional[str] = None) -> str:
     """润色：走本地模型；若为「摘要」结构则只润色正文部分。"""
-    runtime_model = model or RUNTIME_POLISH_MODEL
+    runtime_model = _resolve_runtime_model(model, mode="polish")
     sp = split_paper_abstract_block(original)
     if sp:
         prefix, body, suffix = sp
         if not body.strip():
             return original
         polished = await _polish_body(body, model=runtime_model)
-        out = prefix + polished.strip()
+        out = prefix + strip_redundant_leading_abstract_label(prefix, polished.strip())
         if suffix:
             out += f"\n{suffix}"
-        return out
-    return await _polish_body(original, model=runtime_model)
+        return postprocess_model_output_quality(out)
+    body_out = await _polish_body(original, model=runtime_model)
+    return postprocess_model_output_quality(body_out)
+
+
+async def polish_with_model_reviewed(original: str, *, model: Optional[str] = None) -> str:
+    """
+    润色 + 审查：字数差与改写前后相似度均达标才返回；否则同一段最多生成 POLISH_REVIEW_MAX_ATTEMPTS 次，
+    仍不达标则返回最后一次结果（由上层再做字数蒸发等兜底）。
+    """
+    runtime_model = _resolve_runtime_model(model, mode="polish")
+    last = ""
+    for _ in range(POLISH_REVIEW_MAX_ATTEMPTS):
+        cand = await polish_with_model(original, model=runtime_model)
+        last = cand
+        if _polish_output_passes_review(original, cand):
+            return cand
+    return last
 
 
 async def _polish_body(text: str, *, model: str) -> str:
-    if _use_simple_paragraph_rewrite():
-        # 新 merged 模型：只喂正文，避免复杂指令干扰输出
-        np = _simple_mode_num_predict(text, POLISH_NUM_PREDICT)
+    if _use_remote_inference() and REMOTE_INFERENCE_BODY_ONLY:
+        np = _remote_segment_num_predict(text, POLISH_NUM_PREDICT)
         out = await model_chat_for_text(
             model,
             text,
             system=None,
+            temperature=POLISH_TEMPERATURE,
+            top_p=POLISH_TOP_P,
+            num_predict=np,
+        )
+    elif _use_remote_inference():
+        psys, puser = build_polish_system_and_user(text)
+        np = _remote_segment_num_predict(text, POLISH_NUM_PREDICT)
+        out = await model_chat_for_text(
+            model,
+            puser,
+            system=psys,
             temperature=POLISH_TEMPERATURE,
             top_p=POLISH_TOP_P,
             num_predict=np,
@@ -1904,6 +2595,7 @@ async def _polish_body(text: str, *, model: str) -> str:
     out = _strip_model_think_blocks(out)
     out = _strip_reduce_chinese_preamble(out)
     out = sanitize_reduce_output(text, out)
+    out = strip_runaway_leading_abstract_labels(out)
     if not out.strip():
         return text
     if detect_english_contamination_in_chinese_output(text, out):
@@ -1924,51 +2616,171 @@ async def _polish_body(text: str, *, model: str) -> str:
     return out.strip()
 
 
+def _needs_reduce_rerun(original_full: str, reduced_full: str) -> bool:
+    """字数差过大、与原文几乎相同、或相似度过低（偏离过大）时触发外层重试。"""
+    o = (original_full or "").strip()
+    r = (reduced_full or "").strip()
+    if not o:
+        return False
+    ow = count_words(o)
+    if ow < 40:
+        return False
+    if not r.strip():
+        return True
+    pw = count_words(r)
+    if abs(ow - pw) > REDUCE_RETRY_MAX_WORD_DELTA:
+        return True
+    if _is_too_similar_rewrite(o, r):
+        return True
+    ratio = _plain_norm_similarity(o, r)
+    ons = re.sub(r"\s+", "", o)
+    if REDUCE_SIMILARITY_MIN_RATIO > 0 and len(ons) >= 260 and ratio < REDUCE_SIMILARITY_MIN_RATIO:
+        return True
+    return False
+
+
 async def reduce_with_wordcount_control(text: str, *, model: Optional[str] = None) -> str:
     """
     降 AIGC：输出尽量与原文字数接近，偏差过大则在后台重改一次。
     若为「标题 + 摘要： + 正文 + 关键词」结构，仅改写摘要正文，标题/摘要行/关键词行原样保留。
+    外层：字数差、过近相似度、（可选）过低相似度任一不达标时重生成，整段最多生成 REDUCE_REVIEW_MAX_ATTEMPTS 次。
     """
-    runtime_model = model or RUNTIME_REDUCE_MODEL
-    sp = split_paper_abstract_block(text)
-    if sp:
-        prefix, body, suffix = sp
-        if not body.strip():
-            return text
-        reduced = await _reduce_body_with_wordcount(body, model=runtime_model)
-        out = prefix + reduced.strip()
-        if suffix:
-            out += f"\n{suffix}"
-        return out
-    return await _reduce_body_with_wordcount(text, model=runtime_model)
+    runtime_model = _resolve_runtime_model(model, mode="reduce")
+
+    async def _build_full_once(retry_attempt: int) -> str:
+        sp = split_paper_abstract_block(text)
+        if sp:
+            prefix, body, suffix = sp
+            if not body.strip():
+                return text
+            reduced = await _reduce_body_with_wordcount(
+                body, model=runtime_model, retry_attempt=retry_attempt
+            )
+            stripped = strip_redundant_leading_abstract_label(prefix, reduced.strip())
+            if not stripped.strip() and reduced.strip():
+                stripped = reduced.strip()
+            out = prefix + stripped
+            if suffix:
+                out += f"\n{suffix}"
+            return out
+        return await _reduce_body_with_wordcount(
+            text, model=runtime_model, retry_attempt=retry_attempt
+        )
+
+    out = await _build_full_once(0)
+    for attempt in range(1, REDUCE_REVIEW_MAX_ATTEMPTS):
+        if not _needs_reduce_rerun(text, out):
+            break
+        out = await _build_full_once(attempt)
+        if not _needs_reduce_rerun(text, out):
+            break
+    return out
 
 
-async def _reduce_body_with_wordcount(text: str, *, model: str) -> str:
+def _split_paragraph_into_reduce_chunks(text: str, max_chars: int) -> List[str]:
+    """
+    按逗号、句号等标点切句并合并为每块长度 ≤ max_chars（字符数），
+    供逐块调用模型；块之间拼接无额外字符（与原文字符流连续）。
+    """
+    s = text.replace("\r\n", "\n").strip()
+    if not s:
+        return []
+    max_chars = max(24, int(max_chars))
+    if len(s) <= max_chars:
+        return [s]
+    pieces = [p for p in re.split(r"([，。！？；、,.!?;:\n])", s) if p]
+    chunks: List[str] = []
+    buf = ""
+    for p in pieces:
+        if len(buf) + len(p) <= max_chars:
+            buf += p
+            continue
+        if buf.strip():
+            chunks.append(buf.strip())
+        if len(p) > max_chars:
+            w = p
+            while len(w) > max_chars:
+                chunks.append(w[:max_chars])
+                w = w[max_chars:]
+            buf = w
+        else:
+            buf = p
+    if buf.strip():
+        chunks.append(buf.strip())
+    return [c for c in chunks if c]
+
+
+async def _reduce_body_with_wordcount(text: str, *, model: str, retry_attempt: int = 0) -> str:
     """
     对单段正文做降 AIGC（字数控制）。
+    超过 REDUCE_CHUNK_MAX_CHARS 时按标点切为更短子句，依次调用模型后拼接。
+    """
+    chunks = _split_paragraph_into_reduce_chunks(text, REDUCE_CHUNK_MAX_CHARS)
+    if len(chunks) <= 1:
+        return await _reduce_body_monolith(text, model=model, retry_attempt=retry_attempt)
+    parts: List[str] = []
+    for ck in chunks:
+        if not ck.strip():
+            continue
+        parts.append(await _reduce_body_monolith(ck, model=model, retry_attempt=retry_attempt))
+    return "".join(parts)
+
+
+async def _reduce_body_monolith(text: str, *, model: str, retry_attempt: int = 0) -> str:
+    """
+    对一整块正文做单次（或 strict 二轮）降 AIGC；由 _reduce_body_with_wordcount 按子句调度。
     """
     original_wc = count_words(text)
     max_delta = int(max(5, min(WORDCOUNT_TOLERANCE_ABS, original_wc * WORDCOUNT_TOLERANCE_RATIO)))
 
-    if _use_simple_paragraph_rewrite():
-        # 新 merged 模型：只输入原段落，直接取改写结果
-        np = _simple_mode_num_predict(text, REDUCE_NUM_PREDICT)
+    if _use_remote_inference() and REMOTE_INFERENCE_BODY_ONLY:
+        np = _remote_segment_num_predict(text, REDUCE_NUM_PREDICT)
+        t0 = min(1.0, REDUCE_TEMPERATURE + 0.08 * max(0, retry_attempt))
+        tp0 = min(0.98, REDUCE_TOP_P + 0.015 * max(0, retry_attempt))
         first = await model_chat_for_text(
             model,
             text,
             system=None,
-            temperature=REDUCE_TEMPERATURE,
-            top_p=REDUCE_TOP_P,
+            temperature=t0,
+            top_p=tp0,
             num_predict=np,
         )
-        # 若首轮基本没改动，简单重试一次（仍只给原段落），提高“可见改写”概率
         if _is_too_similar_rewrite(text, first):
             first_retry = await model_chat_for_text(
                 model,
                 text,
                 system=None,
-                temperature=min(1.0, REDUCE_TEMPERATURE + 0.22),
-                top_p=min(0.98, REDUCE_TOP_P + 0.03),
+                temperature=min(1.0, REDUCE_TEMPERATURE + 0.22 + 0.05 * max(0, retry_attempt)),
+                top_p=min(0.98, REDUCE_TOP_P + 0.03 + 0.01 * max(0, retry_attempt)),
+                num_predict=np,
+            )
+            if first_retry.strip():
+                first = first_retry
+    elif _use_remote_inference():
+        sys0, user0 = build_reduce_system_and_user(
+            text=text, target_wc=original_wc, max_delta=max_delta, strict=False
+        )
+        np = _remote_segment_num_predict(text, REDUCE_NUM_PREDICT)
+        t0 = min(1.0, REDUCE_TEMPERATURE + 0.08 * max(0, retry_attempt))
+        tp0 = min(0.98, REDUCE_TOP_P + 0.015 * max(0, retry_attempt))
+        first = await model_chat_for_text(
+            model,
+            user0,
+            system=sys0,
+            temperature=t0,
+            top_p=tp0,
+            num_predict=np,
+        )
+        if _is_too_similar_rewrite(text, first):
+            sys1, user1 = build_reduce_system_and_user(
+                text=text, target_wc=original_wc, max_delta=max_delta, strict=True
+            )
+            first_retry = await model_chat_for_text(
+                model,
+                user1,
+                system=sys1,
+                temperature=min(1.0, REDUCE_TEMPERATURE + 0.22 + 0.05 * max(0, retry_attempt)),
+                top_p=min(0.98, REDUCE_TOP_P + 0.03 + 0.01 * max(0, retry_attempt)),
                 num_predict=np,
             )
             if first_retry.strip():
@@ -1981,7 +2793,7 @@ async def _reduce_body_with_wordcount(text: str, *, model: str) -> str:
             model,
             user0,
             system=sys0,
-            temperature=REDUCE_TEMPERATURE,
+            temperature=min(1.0, REDUCE_TEMPERATURE + 0.06 * max(0, retry_attempt)),
             top_p=REDUCE_TOP_P,
         )
     first = _strip_model_think_blocks(first)
@@ -2019,8 +2831,7 @@ async def _reduce_body_with_wordcount(text: str, *, model: str) -> str:
                 return finalize_reduce_text(text, fb)
         return out1
 
-    if _use_simple_paragraph_rewrite():
-        # 简化模式不再做“重改一次”的复杂指令回合，避免再次触发元话语
+    if _use_remote_inference():
         out1 = finalize_reduce_text(text, first)
         if _is_too_similar_rewrite(text, out1):
             fb = _offline_reduce_fallback(text)
@@ -2145,6 +2956,7 @@ app = FastAPI(title="Paper Polish API (dev)")
 @app.on_event("startup")
 def _startup_db_bootstrap() -> None:
     Base.metadata.create_all(bind=engine)
+    _feedback_uploads_dir()
     with SessionLocal() as db:
         auth_repo.get_or_create_seed_user(
             db,
@@ -2153,6 +2965,7 @@ def _startup_db_bootstrap() -> None:
             nickname=DEFAULT_NICKNAME,
             default_quota=DEFAULT_WORD_QUOTA,
         )
+        auth_repo.unban_protected_admin_accounts(db)
 
 app.add_middleware(
     CORSMiddleware,
@@ -2161,6 +2974,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(adhub_proxy_router)
+
+_static_root = Path(__file__).resolve().parent / "static"
+if _static_root.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_static_root)), name="static")
 
 
 @app.get("/api/health")
@@ -2358,6 +3177,17 @@ async def me(user: Dict[str, Any] = Depends(get_current_user)) -> UserInfo:
     return UserInfo(id=user["id"], email=user["email"], nickname=user.get("nickname"))
 
 
+def _feedback_body_meets_minimum(content: str) -> bool:
+    c = (content or "").strip()
+    if re.search(r"!\[[^\]]*\]\([^)]+\)", c):
+        return True
+    if re.search(r"<img[^>]*\ssrc\s*=", c, re.I):
+        return True
+    plain = re.sub(r"<[^>]+>", " ", c)
+    plain = re.sub(r"\s+", " ", plain).strip()
+    return len(plain) >= 8
+
+
 @app.post("/api/feedback", response_model=FeedbackItem)
 async def create_feedback(
     req: FeedbackCreateRequest,
@@ -2365,8 +3195,8 @@ async def create_feedback(
     db: Session = Depends(get_db),
 ) -> FeedbackItem:
     content = req.content.strip()
-    if len(content) < 8:
-        raise HTTPException(status_code=400, detail="反馈内容至少 8 个字符")
+    if not _feedback_body_meets_minimum(content):
+        raise HTTPException(status_code=400, detail="反馈内容至少 8 个字符，或粘贴至少一张截图")
     row = feedback_repo.create_feedback(
         db,
         user_id=user["id"],
@@ -2374,17 +3204,7 @@ async def create_feedback(
         content=content,
         contact=(req.contact or "").strip() or None,
     )
-    return FeedbackItem(
-        id=row.id,
-        userId=row.user_id,
-        userEmail=user["email"],
-        category=row.category,
-        content=row.content,
-        contact=row.contact,
-        status=row.status,  # type: ignore[arg-type]
-        createdAt=row.created_at.isoformat(),
-        updatedAt=row.updated_at.isoformat(),
-    )
+    return _feedback_item_from_row(db, row)
 
 
 @app.get("/api/feedback/my", response_model=List[FeedbackItem])
@@ -2393,80 +3213,99 @@ async def list_my_feedback(
     db: Session = Depends(get_db),
 ) -> List[FeedbackItem]:
     rows = feedback_repo.list_feedback_by_user(db, user["id"])
-    return [
-        FeedbackItem(
-            id=r.id,
-            userId=r.user_id,
-            userEmail=user["email"],
-            category=r.category,
-            content=r.content,
-            contact=r.contact,
-            status=r.status,  # type: ignore[arg-type]
-            createdAt=r.created_at.isoformat(),
-            updatedAt=r.updated_at.isoformat(),
-        )
-        for r in rows
-    ]
+    return [_feedback_item_from_row(db, r) for r in rows]
+
+
+@app.get("/api/feedback/my/pending-count")
+async def feedback_my_pending_count(
+    user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, int]:
+    return {"pendingCount": feedback_repo.count_user_feedback_pending(db, user["id"])}
+
+
+@app.post("/api/feedback/upload-image")
+async def feedback_upload_image(
+    file: UploadFile = File(...),
+    _: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, str]:
+    path = await _save_feedback_uploaded_image(file)
+    return {"url": path}
 
 
 @app.get("/api/admin/feedback", response_model=List[FeedbackItem])
 async def list_admin_feedback(
-    user: Dict[str, Any] = Depends(get_current_user),
+    _: Dict[str, Any] = Depends(require_admin_user),
     db: Session = Depends(get_db),
 ) -> List[FeedbackItem]:
-    # 开发版：管理员鉴权由前端守卫控制，后续接入真实 role 后在此处补后端权限判断。
-    _ = user
     rows = feedback_repo.list_feedback_all(db)
-    user_map = {
-        u.id: u.email for u in db.scalars(select(_entities.User)).all()
-    }
-    return [
-        FeedbackItem(
-            id=r.id,
-            userId=r.user_id,
-            userEmail=user_map.get(r.user_id, ""),
-            category=r.category,
-            content=r.content,
-            contact=r.contact,
-            status=r.status,  # type: ignore[arg-type]
-            createdAt=r.created_at.isoformat(),
-            updatedAt=r.updated_at.isoformat(),
-        )
-        for r in rows
-    ]
+    return [_feedback_item_from_row(db, r) for r in rows]
+
+
+@app.post("/api/admin/feedback/upload-image")
+async def admin_feedback_upload_image(
+    file: UploadFile = File(...),
+    _: Dict[str, Any] = Depends(require_admin_user),
+) -> Dict[str, str]:
+    path = await _save_feedback_uploaded_image(file)
+    return {"url": path}
+
+
+@app.get("/api/admin/feedback/open-count")
+async def admin_open_feedback_count(
+    _: Dict[str, Any] = Depends(require_admin_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, int]:
+    return {"openCount": feedback_repo.count_feedback_by_status(db, status="open")}
+
+
+@app.get("/api/admin/feedback/{feedback_id}", response_model=FeedbackItem)
+async def get_admin_feedback(
+    feedback_id: str,
+    _: Dict[str, Any] = Depends(require_admin_user),
+    db: Session = Depends(get_db),
+) -> FeedbackItem:
+    row = feedback_repo.get_feedback(db, feedback_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    return _feedback_item_from_row(db, row)
 
 
 @app.patch("/api/admin/feedback/{feedback_id}", response_model=FeedbackItem)
-async def update_admin_feedback_status(
+async def update_admin_feedback(
     feedback_id: str,
-    req: FeedbackStatusUpdateRequest,
-    user: Dict[str, Any] = Depends(get_current_user),
+    req: FeedbackAdminPatchRequest,
+    _: Dict[str, Any] = Depends(require_admin_user),
     db: Session = Depends(get_db),
 ) -> FeedbackItem:
-    _ = user
-    row = feedback_repo.update_feedback_status(db, feedback_id, req.status)
+    if not req.model_fields_set:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    touch_status = "status" in req.model_fields_set
+    touch_reply = "admin_reply" in req.model_fields_set
+    reply_val: str | None = None
+    if touch_reply:
+        if req.admin_reply is None:
+            reply_val = None
+        else:
+            reply_val = req.admin_reply.strip() or None
+    row = feedback_repo.patch_feedback_admin(
+        db,
+        feedback_id,
+        status=req.status if touch_status else None,
+        update_status=touch_status and req.status is not None,
+        admin_reply=reply_val,
+        update_admin_reply=touch_reply,
+    )
     if not row:
         raise HTTPException(status_code=404, detail="Feedback not found")
-    owner = auth_repo.get_user_by_id(db, row.user_id)
-    return FeedbackItem(
-        id=row.id,
-        userId=row.user_id,
-        userEmail=owner.email if owner else "",
-        category=row.category,
-        content=row.content,
-        contact=row.contact,
-        status=row.status,  # type: ignore[arg-type]
-        createdAt=row.created_at.isoformat(),
-        updatedAt=row.updated_at.isoformat(),
-    )
+    return _feedback_item_from_row(db, row)
 
 
 @app.get("/api/admin/overview", response_model=AdminOverviewResponse)
 async def admin_overview(
-    user: Dict[str, Any] = Depends(get_current_user),
+    _: Dict[str, Any] = Depends(require_admin_user),
     db: Session = Depends(get_db),
 ) -> AdminOverviewResponse:
-    _ = user
     user_rows, agg = admin_repo.admin_overview_rows(db)
     daily = [DailyMetricPoint(**x) for x in admin_repo.admin_daily_metrics(db)]
     return AdminOverviewResponse(
@@ -2475,13 +3314,17 @@ async def admin_overview(
         totalAdViews=agg["totalAdViews"],
         totalWordsQuota=agg["totalWordsQuota"],
         usedWordsQuota=agg["usedWordsQuota"],
+        openFeedbackCount=agg["openFeedbackCount"],
+        totalTasksCount=agg["totalTasksCount"],
         dailyMetrics=daily,
         users=user_rows[:50],
     )
 
 
 @app.post("/api/admin/users/{user_id}/ban")
-async def admin_ban_user(user_id: str, _: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
+async def admin_ban_user(user_id: str, _: Dict[str, Any] = Depends(require_admin_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
+    if auth_repo.user_is_protected_admin(db, user_id):
+        raise HTTPException(status_code=400, detail="管理员账号不可封禁")
     row = auth_repo.set_user_ban_status(db, user_id, True)
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
@@ -2489,7 +3332,7 @@ async def admin_ban_user(user_id: str, _: Dict[str, Any] = Depends(get_current_u
 
 
 @app.post("/api/admin/users/{user_id}/unban")
-async def admin_unban_user(user_id: str, _: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
+async def admin_unban_user(user_id: str, _: Dict[str, Any] = Depends(require_admin_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
     row = auth_repo.set_user_ban_status(db, user_id, False)
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
@@ -2497,11 +3340,123 @@ async def admin_unban_user(user_id: str, _: Dict[str, Any] = Depends(get_current
 
 
 @app.delete("/api/admin/users/{user_id}")
-async def admin_delete_user(user_id: str, _: Dict[str, Any] = Depends(get_current_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
+async def admin_delete_user(
+    user_id: str, admin: Dict[str, Any] = Depends(require_admin_user), db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    if admin.get("id") == user_id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    if auth_repo.user_is_protected_admin(db, user_id):
+        raise HTTPException(status_code=400, detail="管理员账号不可删除")
     ok = auth_repo.delete_user(db, user_id)
     if not ok:
         raise HTTPException(status_code=404, detail="User not found")
     return {"ok": True, "userId": user_id}
+
+
+def _balance_yuan_for_user(db: Session, user_id: str) -> float:
+    u = db.get(User, user_id)
+    if not u:
+        return 0.0
+    return round(int(u.balance_cents or 0) / 100.0, 2)
+
+
+def _redeem_code_admin_dict(db: Session, r: RedeemCode) -> Dict[str, Any]:
+    email = None
+    if r.restrict_user_id:
+        owner = auth_repo.get_user_by_id(db, r.restrict_user_id)
+        email = owner.email if owner else None
+    ap = int(r.amount) if r.reward_kind == "points" else None
+    ay = round(int(r.amount) / 100.0, 2) if r.reward_kind == "balance_yuan" else None
+    return {
+        "id": r.id,
+        "code": r.code,
+        "rewardKind": r.reward_kind,
+        "amountPoints": ap,
+        "amountBalanceYuan": ay,
+        "scope": r.scope,
+        "restrictUserId": r.restrict_user_id,
+        "restrictEmail": email,
+        "maxUses": int(r.max_uses),
+        "useCount": int(r.use_count),
+        "expiresAt": r.expires_at.isoformat() if r.expires_at else None,
+        "createdAt": r.created_at.isoformat(),
+        "disabled": bool(r.disabled),
+        "effectiveStatus": redeem_repo.effective_redeem_status(r),
+    }
+
+
+@app.get("/api/admin/redeem-codes")
+async def admin_list_redeem_codes(
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(12, ge=1, le=100),
+    _: Dict[str, Any] = Depends(require_admin_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    off = (page - 1) * pageSize
+    rows, total = redeem_repo.list_redeem_codes_paginated(db, offset=off, limit=pageSize)
+    return {"items": [_redeem_code_admin_dict(db, r) for r in rows], "total": int(total)}
+
+
+@app.post("/api/admin/redeem-codes")
+async def admin_create_redeem_codes(
+    req: AdminRedeemCodeCreateRequest,
+    _: Dict[str, Any] = Depends(require_admin_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    if req.scope == "single":
+        uid = (req.restrictUserId or "").strip() or None
+        if not uid and req.restrictEmail:
+            u = auth_repo.get_user_by_email(db, str(req.restrictEmail).strip().lower())
+            uid = u.id if u else None
+        if not uid:
+            raise HTTPException(status_code=400, detail="single scope requires valid restrictUserId or restrictEmail")
+        restrict = uid
+    else:
+        restrict = None
+
+    kind = req.rewardKind
+    if kind == "points":
+        amt = int(req.amount)
+        if amt < 1 or amt > 10_000_000:
+            raise HTTPException(status_code=400, detail="invalid points amount")
+    else:
+        if float(req.amount) < 0.01 or float(req.amount) > 1_000_000:
+            raise HTTPException(status_code=400, detail="invalid balance amount (yuan)")
+        amt = int(round(float(req.amount) * 100))
+
+    if req.maxUses < 1 or req.maxUses > 10_000_000:
+        raise HTTPException(status_code=400, detail="invalid maxUses")
+    if req.quantity < 1 or req.quantity > 100:
+        raise HTTPException(status_code=400, detail="invalid quantity")
+
+    rows = redeem_repo.create_redeem_codes_batch(
+        db,
+        reward_kind=kind,
+        amount=amt,
+        scope=req.scope,
+        restrict_user_id=restrict,
+        max_uses=int(req.maxUses),
+        expires_at=req.expiresAt,
+        quantity=int(req.quantity),
+    )
+    return {"codes": [_redeem_code_admin_dict(db, r) for r in rows]}
+
+
+@app.post("/api/redeem/use", response_model=RedeemUseResponse)
+async def redeem_use_code(
+    req: RedeemUseRequest,
+    user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> RedeemUseResponse:
+    ok, reason, extra = redeem_repo.try_redeem(db, user_id=str(user["id"]), code_raw=req.code)
+    if not ok:
+        return RedeemUseResponse(ok=False, reason=reason, points=None, balanceYuan=None)
+    return RedeemUseResponse(
+        ok=True,
+        reason=reason,
+        points=int(extra.get("points", 0)),
+        balanceYuan=float(extra.get("balanceYuan", 0.0)),
+    )
 
 
 @app.post("/api/points/signin", response_model=SigninResponse)
@@ -2510,35 +3465,16 @@ async def signin(
     db: Session = Depends(get_db),
 ) -> SigninResponse:
     user_id = user["id"]
-    point_state = db.get(PointState, user_id)
-    if not point_state:
-        point_state = PointState(user_id=user_id, points=0, last_signin_date=None, streak=0)
-        db.add(point_state)
-        db.commit()
-        db.refresh(point_state)
-    st_last = point_state.last_signin_date
-    st_streak = int(point_state.streak or 0)
-
+    ps = points_repo.get_or_create_point_state(db, user_id)
     today = _iso_date_utc()
-    if st_last == today:
-        # 今日已签到：不给增益
-        return SigninResponse(gained=0, streak=st_streak, points=int(point_state.points))
-
-    last_date = st_last
-    yesterday = _iso_date_utc(datetime.fromtimestamp((_now_utc() - timedelta(days=1)).timestamp(), tz=timezone.utc))
-    next_streak = st_streak
-    if last_date == yesterday:
-        next_streak += 1
-    else:
-        next_streak = 1
-
-    gained = compute_signin_reward(next_streak)
-    point_state.points = int(point_state.points or 0) + gained
-    point_state.last_signin_date = today
-    point_state.streak = next_streak
+    gained = points_repo.refresh_daily_free(ps, today)
     db.commit()
-
-    return SigninResponse(gained=gained, streak=next_streak, points=int(point_state.points))
+    db.refresh(ps)
+    return SigninResponse(
+        gained=max(0, gained),
+        streak=0,
+        points=int(points_repo.writable_words(ps)),
+    )
 
 
 @app.get("/api/points/me", response_model=PointsState)
@@ -2547,13 +3483,116 @@ async def points_me(
     db: Session = Depends(get_db),
 ) -> PointsState:
     user_id = user["id"]
-    point_state = db.get(PointState, user_id)
-    if not point_state:
-        return PointsState(points=0, signIn={"lastDate": None, "streak": 0})
-    return PointsState(
-        points=int(point_state.points),
-        signIn={"lastDate": point_state.last_signin_date, "streak": int(point_state.streak)},
+    bal = _balance_yuan_for_user(db, user_id)
+    payload = points_repo.prepare_point_state(db, user_id, bal)
+    return PointsState(**payload)
+
+
+@app.post("/api/membership/activate", response_model=MembershipActivateResponse)
+async def membership_activate(
+    req: MembershipActivateRequest,
+    user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MembershipActivateResponse:
+    try:
+        ps, granted = points_repo.activate_membership_demo(
+            db, str(user["id"]), req.tier, trial_days=req.trialDays
+        )
+    except ValueError:
+        return MembershipActivateResponse(
+            ok=False,
+            tier=req.tier,
+            grantedPoints=0,
+            writableWords=0,
+            reason="invalid_tier",
+        )
+    return MembershipActivateResponse(
+        ok=True,
+        tier=ps.membership_tier or req.tier,
+        grantedPoints=granted,
+        writableWords=points_repo.writable_words(ps),
     )
+
+
+@app.post("/api/ad/watch-tickets", response_model=AdWatchTicketCreateResponse)
+async def ad_watch_create_ticket(
+    user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AdWatchTicketCreateResponse:
+    user_id = user["id"]
+    tid = str(uuid.uuid4())
+    exp = _now_utc() + timedelta(seconds=_ad_watch_ttl_seconds())
+    ps = points_repo.get_or_create_point_state(db, user_id)
+    from pricing import ad_reward_for_tier, effective_membership_tier
+
+    tier = effective_membership_tier(ps.membership_tier, ps.membership_expires_at)
+    reward = ad_reward_for_tier(tier)
+    exp_unix = int(exp.timestamp())
+    sig = _ad_watch_sign(tid, user_id, exp_unix)
+    row, reason = ad_watch_repo.create_ticket(
+        db,
+        user_id=user_id,
+        ticket_id=tid,
+        reward_points=reward,
+        expires_at=exp,
+    )
+    if not row:
+        raise HTTPException(status_code=429, detail=reason or "daily_limit")
+    base = _ad_watch_public_base()
+    watch_url = f"{base}/static/ad-watch/index.html?ticket={tid}&sig={sig}&exp={exp_unix}"
+    return AdWatchTicketCreateResponse(ticketId=tid, watchUrl=watch_url, expiresAt=exp.isoformat())
+
+
+@app.get("/api/ad/watch-tickets/{ticket_id}", response_model=AdWatchTicketStatusResponse)
+async def ad_watch_ticket_status(
+    ticket_id: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AdWatchTicketStatusResponse:
+    uid = user["id"]
+    row = ad_watch_repo.get_ticket(db, ticket_id)
+    if not row or row.user_id != uid:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    row = ad_watch_repo.mark_ticket_expired_if_needed(db, row)
+    pts: Optional[int] = None
+    if row.status == "completed":
+        ps = db.get(PointState, uid)
+        pts = int(ps.points) if ps else 0
+    return AdWatchTicketStatusResponse(status=row.status, points=pts)
+
+
+@app.get("/api/ad/watch-tickets/{ticket_id}/qr", response_model=AdWatchQrResponse)
+async def ad_watch_ticket_qr(
+    ticket_id: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AdWatchQrResponse:
+    uid = user["id"]
+    row = ad_watch_repo.get_ticket(db, ticket_id)
+    if not row or row.user_id != uid:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    row = ad_watch_repo.mark_ticket_expired_if_needed(db, row)
+    if row.status != "pending":
+        raise HTTPException(status_code=400, detail="Ticket is not pending")
+    exp_unix = int(row.expires_at.timestamp())
+    sig = _ad_watch_sign(row.id, row.user_id, exp_unix)
+    base = _ad_watch_public_base()
+    watch_url = f"{base}/static/ad-watch/index.html?ticket={row.id}&sig={sig}&exp={exp_unix}"
+    b64 = _ad_watch_qr_png_base64(watch_url)
+    return AdWatchQrResponse(imageBase64=b64, watchUrl=watch_url)
+
+
+@app.post("/api/ad/watch/complete", response_model=AdWatchCompleteResponse)
+def ad_watch_complete(req: AdWatchCompleteRequest, db: Session = Depends(get_db)) -> AdWatchCompleteResponse:
+    row = ad_watch_repo.get_ticket(db, req.ticketId)
+    if not row:
+        return AdWatchCompleteResponse(ok=False, reason="not_found", points=None)
+    if int(row.expires_at.timestamp()) != req.exp:
+        return AdWatchCompleteResponse(ok=False, reason="exp_mismatch", points=None)
+    if not _ad_watch_verify(req.ticketId, row.user_id, req.exp, req.sig):
+        return AdWatchCompleteResponse(ok=False, reason="bad_signature", points=None)
+    ok, reason, pts = ad_watch_repo.complete_ticket_and_credit_points(db, ticket_id=req.ticketId)
+    return AdWatchCompleteResponse(ok=ok, reason=reason, points=pts)
 
 
 @app.post("/api/tasks")
@@ -2563,7 +3602,16 @@ async def create_task(
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     task_id = str(uuid.uuid4())
-    parts = split_into_paragraphs(req)
+    citations_removed = 0
+    raw_for_split = req.raw_text
+    if raw_for_split and raw_for_split.strip():
+        raw_for_split, citations_removed = strip_inline_citation_markers(raw_for_split)
+    effective_req = CreateTaskRequest(
+        mode=req.mode,
+        raw_text=raw_for_split,
+        paragraphs=req.paragraphs,
+    )
+    parts = split_into_paragraphs(effective_req)
     if not parts:
         # 兜底：前端当前大量交互仍是“界面演示”，如果没传段落，就用示例段落保证工作台可展示。
         parts = [
@@ -2571,7 +3619,7 @@ async def create_task(
             "方法部分描述了若干典型实验步骤，示例内容略。",
         ]
     paragraphs = make_task_paragraphs(req.mode, parts)
-    task_title = derive_paper_title_from_raw_text(req.raw_text) or derive_paper_title_from_parts(parts)
+    task_title = derive_paper_title_from_raw_text(raw_for_split) or derive_paper_title_from_parts(parts)
 
     task_repo.create_task(
         db,
@@ -2583,7 +3631,10 @@ async def create_task(
         paragraphs=[p.model_dump() for p in paragraphs],
     )
 
-    return {"taskId": task_id}
+    out: Dict[str, Any] = {"taskId": task_id}
+    if citations_removed > 0:
+        out["citationsRemoved"] = citations_removed
+    return out
 
 
 @app.get("/api/tasks", response_model=List[TaskDetail])
@@ -2675,33 +3726,63 @@ async def process_paragraph(
                 "polished": original,
             },
             "skipped": True,
+            "billing": {"deducted": 0, "fromDailyFree": 0, "fromPoints": 0},
         }
 
+    ps = points_repo.get_or_create_point_state(db, user["id"])
+    estimated_cost = count_words(original.strip())
+    if estimated_cost > 0 and points_repo.writable_words(ps) < estimated_cost:
+        raise HTTPException(status_code=402, detail="insufficient_words")
+
     model_used = select_runtime_model(mode, task_id, idx, original)
-    if mode == "reduce":
+    if _model_inference_disabled():
+        polished_text = mock_polish(mode, original)
+        model_used = "mock:disabled"
+    elif mode == "reduce":
         reduced = await reduce_with_wordcount_control(original, model=model_used)
         polished_text = reduced if reduced else mock_polish(mode, original)
     else:
-        polished = await polish_with_model(original, model=model_used)
+        polished = await polish_with_model_reviewed(original, model=model_used)
         polished_text = polished if polished.strip() else mock_polish(mode, original)
+
+    polished_text = strip_runaway_leading_abstract_labels(polished_text)
+    polished_text = postprocess_model_output_quality(polished_text)
+    if not polished_text.strip():
+        polished_text = original
+    # 非空但字数蒸发（如只剩「摘要」）：视为失败，回退原文，避免界面出现 2 字假结果
+    _ow = count_words(original.strip())
+    _pw = count_words((polished_text or "").strip())
+    if _ow >= 80 and _pw < max(12, int(_ow * 0.18)):
+        polished_text = original
+
+    bill_amount = count_words(polished_text)
+    ok_bill, bill_detail = points_repo.deduct_writable_words(ps, bill_amount)
+    if not ok_bill:
+        raise HTTPException(status_code=402, detail="insufficient_words")
 
     saved = task_repo.update_task_paragraph_result(
         db,
         task_id=task_id,
         idx=idx,
         polished=polished_text,
-        word_count=count_words(polished_text),
+        word_count=bill_amount,
         model_used=model_used,
     )
 
     return {
         "paragraph": {
             "index": idx,
-            "wordCount": saved.word_count if saved else count_words(polished_text),
+            "wordCount": saved.word_count if saved else bill_amount,
             "original": original,
             "polished": polished_text,
             "modelUsed": model_used,
-        }
+        },
+        "billing": {
+            "deducted": bill_amount,
+            "fromDailyFree": bill_detail["fromDailyFree"],
+            "fromPoints": bill_detail["fromPoints"],
+            "writableWordsRemaining": bill_detail["remainingWritable"],
+        },
     }
 
 

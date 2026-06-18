@@ -1,0 +1,470 @@
+/* 段落对比卡：每个小卡右下角显示该段字数 */
+.paragraph-compare-inner-card {
+  background: var(--bg-surface) !important;
+  border: 2px solid var(--border-strong) !important;
+  border-radius: 10px !important;
+  overflow: hidden; /* 保证上边角边框不被遮住 */
+}
+
+html.app-theme-dark .paragraph-compare-inner-card {
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  border-color: var(--glass-border) !important;
+}
+
+.paragraph-compare-inner-card .ant-card-body {
+  border-radius: inherit;
+}
+
+/* 工作台：把 GalaxyButton 尺寸调到更接近 AntD 默认按钮 */
+.workbench-galaxy-btn {
+  --btn-font-size: 16px;
+  padding: 0.9em 1.9em !important;
+  border-radius: 8px !important;
+}
+
+/* 工作台顶栏：药丸形、略小 */
+.workbench-galaxy-btn.workbench-galaxy-btn--pill {
+  --btn-font-size: 13px !important;
+  padding: 0.42em 1.15em !important;
+  min-height: 34px !important;
+  border-radius: 999px !important;
+}
+
+.workbench-galaxy-btn .galaxy-btn__content {
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+
+/* 工作台：圆形暂停/继续，与 Galaxy 风格一致 */
+.workbench-galaxy-circle-btn {
+  --btn-font-size: 16px !important;
+  width: 36px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  flex-shrink: 0;
+  /* 默认 .galaxy-btn 为 overflow:hidden，会裁掉四角光晕；圆形需外显 blur */
+  overflow: visible !important;
+  /* 给外扩光晕留一点边距，避免贴边仍被父级裁切 */
+  margin: 2px 6px 2px 2px;
+}
+
+.workbench-galaxy-circle-btn::before {
+  border-radius: 50% !important;
+  inset: -6px !important;
+}
+
+.workbench-galaxy-circle-btn::after {
+  border-radius: 50% !important;
+}
+
+/* 银河「星点」层是为大按钮设计的；小圆钮上径向渐变会落在底边/外侧，像多余白点 */
+.workbench-galaxy-circle-btn .galaxy-btn__stars {
+  display: none !important;
+}
+
+.workbench-galaxy-circle-btn .galaxy-btn__content {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0 !important;
+}
+
+.workbench-galaxy-circle-btn .galaxy-btn__text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.workbench-galaxy-circle-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 空闲可点（三角形=开始）：略柔化，与生成中暂停钮区分 */
+.workbench-galaxy-circle-btn--idle {
+  opacity: 0.92;
+}
+
+/* 实时跟随：关闭态弱化，与「开启」区分；图标上斜线表示「不自动跟随」 */
+.workbench-galaxy-circle-btn--follow-off {
+  opacity: 0.72;
+}
+
+.workbench-follow-icon-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.workbench-galaxy-circle-btn--follow-off .workbench-follow-icon-wrap::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 130%;
+  height: 2px;
+  background: currentColor;
+  transform: translate(-50%, -50%) rotate(-42deg);
+  opacity: 0.92;
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+/* 工作台：生成中提示（放在边框外右下角附近） */
+.paragraph-compare-outer-card {
+  position: relative;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  overflow: visible; /* 外框去掉，允许子元素角标/提示浮出 */
+}
+
+/* 工作台整页：占满控制台内容区高度，左侧段落列表 + 右侧工具栏固定、仅正文滚动 */
+.workbench-page-root.ant-layout {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: stretch !important;
+  /* 顶栏 64px + 控制台主区内边距上下各 16px */
+  height: calc(100vh - 96px);
+  max-height: calc(100vh - 96px);
+  min-height: 0;
+  overflow: hidden;
+  background: transparent !important;
+}
+
+/* 工作台左侧段落菜单：已完成段显示绿色勾 */
+.workbench-paragraph-menu .ant-menu-title-content {
+  width: 100%;
+}
+
+.workbench-menu-para-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding-right: 2px;
+  box-sizing: border-box;
+}
+
+.workbench-menu-para-check {
+  color: #52c41a !important;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.workbench-inner-sider.ant-layout-sider {
+  flex: 0 0 220px !important;
+  max-width: 220px !important;
+  min-width: 220px !important;
+  width: 220px !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  position: relative;
+  border-radius: 14px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.09);
+  overflow: hidden;
+}
+
+html.app-theme-dark .workbench-inner-sider.ant-layout-sider {
+  background: var(--glass-bg) !important;
+  border: 1px solid var(--glass-border-subtle);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow-md);
+}
+
+/* 段落工作台 / 控制台：方形圆角返回（由 ConsoleLayout 挂在主区左上角） */
+.workbench-back-nav-btn {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--text-primary);
+  font-size: 16px;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.15s ease;
+}
+
+.workbench-back-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(15, 23, 42, 0.18);
+  color: var(--text-primary);
+}
+
+.workbench-back-nav-btn:active {
+  transform: scale(0.96);
+}
+
+.workbench-back-nav-btn:focus-visible {
+  outline: 2px solid rgba(99, 102, 241, 0.55);
+  outline-offset: 2px;
+}
+
+html.app-theme-dark .workbench-back-nav-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--glass-border);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  color: #e5e5e5;
+}
+
+html.app-theme-dark .workbench-back-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.workbench-inner-content.ant-layout-content {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  /* 顶部略留空，避免工具栏内圆形 Galaxy 光晕被本容器 overflow 裁掉 */
+  padding: 6px 0 0 16px !important;
+}
+
+.workbench-toolbar {
+  flex-shrink: 0;
+  padding: 6px 4px 10px 4px;
+  background: var(--bg-surface);
+  z-index: 5;
+  border-bottom: 1px solid var(--border-subtle);
+  overflow: visible;
+  border-radius: 12px;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+html.app-theme-dark .workbench-toolbar {
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  border: 1px solid var(--glass-border-subtle);
+  border-bottom: 1px solid var(--glass-border-subtle);
+  box-shadow: var(--glass-shadow-md);
+}
+
+/* 避免 Ant Space 裁切子项外溢（圆形 Galaxy 光晕） */
+.workbench-toolbar .ant-space,
+.workbench-toolbar .ant-space-item {
+  overflow: visible;
+}
+
+.workbench-paragraph-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* 左侧菜单点击后 scrollIntoView 时，与可视区顶部留一点空隙；离屏段落跳过布局以减轻长文滚动开销 */
+.workbench-paragraph-anchor {
+  scroll-margin-top: 12px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 360px;
+}
+
+.workbench-stagger-item {
+  opacity: 0;
+  transform: translateY(-14px);
+  animation: console-item-rise-in 420ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+  animation-delay: var(--wb-delay, 0ms);
+}
+
+/* 工作台：段落卡片列表（工具栏已单独固定，此处仅保留与首段标题的间距） */
+.workbench-paragraph-stack {
+  margin-top: 4px;
+  padding-top: 16px;
+}
+
+.paragraph-compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  width: 100%;
+}
+
+.paragraph-compare-inner-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.paragraph-compare-body {
+  margin-top: 8px;
+  margin-bottom: 0;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-primary);
+}
+
+.paragraph-compare-outer-card {
+  padding: 12px;
+}
+
+.paragraph-compare-inner-card {
+  padding: 12px;
+  padding-bottom: 36px;
+}
+
+.route-lazy-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 40vh;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.route-lazy-fallback__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-primary, #3370ff);
+  animation: route-lazy-pulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes route-lazy-pulse {
+  from {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.paragraph-compare-wrap {
+  position: relative;
+  padding-top: 2px;
+  margin-bottom: 14px; /* 每段之间要有可见间距 */
+}
+
+.paragraph-compare-wrap--typing {
+  contain: layout style paint;
+}
+
+.paragraph-compare-body--result {
+  will-change: contents;
+}
+
+.paragraph-compare-title {
+  position: absolute;
+  left: 20px; /* 对齐到左侧内卡外边框附近（外层padding12 + Row gutter约8） */
+  top: -14px; /* 略上移即可贴内卡，避免与上方任务区文案重叠 */
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-primary);
+  z-index: 6;
+  background: transparent;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.paragraph-compare-typing-indicator {
+  position: absolute;
+  right: 10px;
+  bottom: -16px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: transparent;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  pointer-events: none;
+  z-index: 6;
+  line-height: 1.2;
+}
+
+.paragraph-compare-typing-dots span {
+  display: inline-block;
+  animation: paragraph-typing-dot-bounce 1.05s ease-in-out infinite;
+}
+
+.paragraph-compare-typing-dots span:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.paragraph-compare-typing-dots span:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes paragraph-typing-dot-bounce {
+  0%,
+  70%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  35% {
+    transform: translateY(-5px);
+    opacity: 1;
+  }
+}
+
+/* 内卡：右下角字数角标（避免与边框/文字重叠） */
+.paragraph-compare-inner-card {
+  position: relative;
+}
+
+.paragraph-compare-inner-wordcount {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text-secondary);
+  background: transparent;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+html.app-theme-dark .paragraph-compare-inner-wordcount {
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+}
+
+.paragraph-compare-wordcount-corner {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #000;
+  padding: 2px 6px;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  line-height: 1.2;
+  pointer-events: none;
+}
+

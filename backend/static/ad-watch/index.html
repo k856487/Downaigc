@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>观看广告领改写字数</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 420px; margin: 24px auto; padding: 0 16px; color: #111; }
+    h1 { font-size: 1.1rem; }
+    .hint { color: #555; font-size: 0.9rem; line-height: 1.5; }
+    #count { font-size: 2rem; font-weight: 700; margin: 16px 0; }
+    #msg { margin-top: 12px; font-size: 0.9rem; }
+    .err { color: #b91c1c; }
+    .ok { color: #15803d; }
+  </style>
+</head>
+<body>
+  <h1>微信内观看广告（演示）</h1>
+  <p class="hint">本页为普通网页，由微信扫一扫直接打开，无需进入小程序。请保持本页在前台，倒计时结束后将自动领取改写字数；关闭或提前离开可能无法领奖。</p>
+  <div id="count">30</div>
+  <div id="msg"></div>
+  <script>
+    (function () {
+      var params = new URLSearchParams(location.search);
+      var ticketId = params.get("ticket");
+      var sig = params.get("sig");
+      var exp = params.get("exp");
+      var msgEl = document.getElementById("msg");
+      var countEl = document.getElementById("count");
+      if (!ticketId || !sig || exp == null) {
+        msgEl.textContent = "链接参数不完整，请从电脑控制台「领改写字数」等处重新生成二维码。";
+        msgEl.className = "err";
+        return;
+      }
+      var expNum = parseInt(exp, 10);
+      if (!Number.isFinite(expNum)) {
+        msgEl.textContent = "参数无效。";
+        msgEl.className = "err";
+        return;
+      }
+      var left = 30;
+      function finish() {
+        msgEl.textContent = "正在提交…";
+        fetch("/api/ad/watch/complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticketId: ticketId, sig: sig, exp: expNum })
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) {
+              msgEl.className = "ok";
+              msgEl.textContent =
+                data.reason === "already_completed"
+                  ? "已完成领取，可关闭本页并在控制台查看改写字数。"
+                  : "领取成功，可关闭本页并在控制台查看改写字数。" + (data.points != null ? " 当前可改写字数：" + data.points : "");
+            } else {
+              msgEl.className = "err";
+              msgEl.textContent = "领取失败：" + (data.reason || "unknown");
+            }
+          })
+          .catch(function () {
+            msgEl.className = "err";
+            msgEl.textContent = "网络错误，请稍后重试。";
+          });
+      }
+      var t = window.setInterval(function () {
+        left -= 1;
+        countEl.textContent = String(Math.max(0, left));
+        if (left <= 0) {
+          window.clearInterval(t);
+          finish();
+        }
+      }, 1000);
+    })();
+  </script>
+</body>
+</html>

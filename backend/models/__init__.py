@@ -1,4 +1,15 @@
-from models.entities import EmailVerificationCode, Feedback, PointState, Task, TaskParagraph, User, UserQuota
+from models.entities import (
+    AdWatchTicket,
+    EmailVerificationCode,
+    Feedback,
+    PointState,
+    RedeemCode,
+    RedeemCodeUsage,
+    Task,
+    TaskParagraph,
+    User,
+    UserQuota,
+)
 
 __all__ = [
     "User",
@@ -8,5 +19,8 @@ __all__ = [
     "TaskParagraph",
     "Feedback",
     "EmailVerificationCode",
+    "AdWatchTicket",
+    "RedeemCode",
+    "RedeemCodeUsage",
 ]
 

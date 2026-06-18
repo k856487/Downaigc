@@ -43,9 +43,10 @@ const AdPlayerModal: React.FC<AdPlayerModalProps> = ({ open, ad, onClose }) => {
         if (next === 0) {
           window.clearInterval(t);
           setCompleted(true);
-          if (ad.points > 0) {
-            addPoints(ad.points);
-            message.success(`已获得 ${ad.points} 积分`);
+          const reward = ad.points ?? 0;
+          if (reward > 0) {
+            addPoints(reward);
+            message.success(`已获得 ${reward.toLocaleString("zh-CN")} 字改写字数`);
           } else {
             message.success("播放完成");
           }
@@ -72,8 +73,8 @@ const AdPlayerModal: React.FC<AdPlayerModalProps> = ({ open, ad, onClose }) => {
     modal.confirm({
       title: "确认关闭广告？",
       content:
-        ad.points > 0
-          ? "提前关闭将无法获得本次积分奖励。"
+        (ad.points ?? 0) > 0
+          ? "提前关闭将无法获得本次改写字数奖励。"
           : "提前关闭将返回页面。",
       okText: "关闭",
       cancelText: "继续观看",
@@ -106,7 +107,7 @@ const AdPlayerModal: React.FC<AdPlayerModalProps> = ({ open, ad, onClose }) => {
     >
       <Space direction="vertical" size={12} style={{ width: "100%" }}>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-          当前暂无广告资源，将展示 30 秒倒计时模拟播放。观看满后发放积分奖励。
+          当前暂无广告资源，将展示 30 秒倒计时模拟播放。观看满后发放改写字数奖励。
         </Typography.Paragraph>
         <Progress percent={percent} showInfo />
         <div

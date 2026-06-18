@@ -13,30 +13,39 @@ export interface TaskRow {
 interface TaskTableProps {
   data?: TaskRow[];
   onView?: (id: string) => void;
+  /** 为 true 时 data 视为已请求结果（可为空数组），不再回退到内置示例行 */
+  loading?: boolean;
 }
 
-const TaskTable: React.FC<TaskTableProps> = ({ data, onView }) => {
-  const rows =
-    data ??
-    [
-      {
-        id: "demo-1",
-        name: "示例任务",
-        type: "polish" as const,
-        paragraphs: 3,
-        status: "done" as const,
-        createdAt: "2026-03-14 10:00"
-      }
-    ];
+const TaskTable: React.FC<TaskTableProps> = ({ data, onView, loading }) => {
+  const demoRows: TaskRow[] = [
+    {
+      id: "demo-1",
+      name: "示例任务",
+      type: "polish",
+      paragraphs: 3,
+      status: "done",
+      createdAt: "2026-03-14 10:00"
+    }
+  ];
+  const rows = loading || data !== undefined ? (data ?? []) : demoRows;
 
   return (
     <Table
       rowKey="id"
       size="small"
       dataSource={rows}
+      loading={!!loading}
       pagination={false}
+      tableLayout="fixed"
+      scroll={{ x: "max-content" }}
       columns={[
-        { title: "任务名称", dataIndex: "name" },
+        {
+          title: "任务名称",
+          dataIndex: "name",
+          ellipsis: true,
+          width: "36%"
+        },
         {
           title: "类型",
           dataIndex: "type",

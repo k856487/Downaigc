@@ -17,10 +17,7 @@ const RegisterPage: React.FC = () => {
       isDark
         ? {
             width: 420,
-            borderRadius: 24,
-            border: "1px solid #262626",
-            background: "#000000",
-            boxShadow: "0 24px 48px rgba(0, 0, 0, 0.45)"
+            borderRadius: 24
           }
         : {
             width: 420,
@@ -40,10 +37,7 @@ const RegisterPage: React.FC = () => {
       isDark
         ? {
             padding: 32,
-            borderRadius: 24,
-            background: "#000000",
-            border: "none",
-            boxShadow: "none"
+            borderRadius: 24
           }
         : {
             padding: 32,

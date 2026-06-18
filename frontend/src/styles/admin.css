@@ -1,0 +1,137 @@
+/* ========== 暗色磨砂：统一复用 console-main-sider 配方（blur 10px + 外层底 / 内层透明） ========== */
+html.app-theme-dark .app-ui-layer,
+html.app-theme-dark .app-ui-layer.ant-app,
+html.app-theme-dark .app-ui-layer .ant-layout,
+html.app-theme-dark .auth-page-shell {
+  background: transparent !important;
+}
+
+html.app-theme-dark #root .ant-card {
+  background: rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  overflow: hidden !important;
+  box-shadow: var(--glass-shadow-md) !important;
+}
+
+html.app-theme-dark #root .ant-card .ant-card-head,
+html.app-theme-dark #root .ant-card .ant-card-body {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html.app-theme-dark #root .auth-main-card.ant-card {
+  background: rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+}
+
+html.app-theme-dark #root .console-floating-header-icons {
+  background: rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+html.app-theme-dark #root .header-user-avatar {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+}
+
+html.app-theme-dark #root .galaxy-btn,
+html.app-theme-dark #root button.galaxy-btn {
+  --btn-bg: transparent !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #d4d4d4 !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+}
+
+html.app-theme-dark #root .galaxy-btn::after,
+html.app-theme-dark #root button.galaxy-btn::after {
+  background: transparent !important;
+}
+
+html.app-theme-dark #root .galaxy-btn .galaxy-btn__content,
+html.app-theme-dark #root .galaxy-btn .galaxy-btn__text {
+  color: #d4d4d4 !important;
+}
+
+html.app-theme-dark #root .ad-carousel-shell {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+html.app-theme-dark #root .ad-carousel-slide-btn,
+html.app-theme-dark #root .ad-carousel-slide-btn--0,
+html.app-theme-dark #root .ad-carousel-slide-btn--1,
+html.app-theme-dark #root .ad-carousel-slide-btn--2 {
+  background: rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: var(--glass-shadow-md) !important;
+}
+
+html.app-theme-dark #root .ant-btn-primary,
+html.app-theme-dark #root .ant-btn-default {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #d4d4d4 !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  box-shadow: none !important;
+}
+
+html.app-theme-dark #root .console-main-sider.ant-layout-sider,
+html.app-theme-dark #root .workbench-inner-sider.ant-layout-sider {
+  background: rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+}
+
+html.app-theme-dark #root .console-main-sider .ant-layout-sider-children,
+html.app-theme-dark #root .workbench-inner-sider .ant-layout-sider-children {
+  background: transparent !important;
+}
+
+html.app-theme-dark #root .ant-modal .ant-modal-content {
+  background: rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  overflow: hidden !important;
+}
+
+html.app-theme-dark #root .ant-modal-header,
+html.app-theme-dark #root .ant-modal-body,
+html.app-theme-dark #root .ant-modal-footer {
+  background: transparent !important;
+}
+
+html.app-theme-dark #root input.ant-input.input,
+html.app-theme-dark #root .ant-input-affix-wrapper.input,
+html.app-theme-dark #root .input {
+  background: rgba(255, 255, 255, 0.05) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: none !important;
+}
+
+html.app-theme-dark #root .auth-main-card .login-password-field.ant-input-affix-wrapper.input input.ant-input,
+html.app-theme-dark #root .auth-main-card .ant-input-affix-wrapper.input input.ant-input {
+  background: transparent !important;
+  border: none !important;
+  border-width: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  outline: none !important;
+}

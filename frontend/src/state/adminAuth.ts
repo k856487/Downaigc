@@ -7,13 +7,30 @@ type AdminSession = {
   at: number;
 };
 
-const ADMIN_EMAIL_WHITELIST = [
-  "kiter"
-];
+function adminEmailsFromEnv(): string[] {
+  try {
+    const raw = (import.meta.env.VITE_ADMIN_EMAILS as string | undefined) || "";
+    if (!raw.trim()) return [];
+    return raw
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
 
+/**
+ * 与后端 ADMIN_EMAILS 对齐：配置了 VITE_ADMIN_EMAILS 则严格白名单。
+ * 未配置时兼容本地种子账号邮箱 `kiter`（与后端 DEFAULT_EMAIL 一致）。
+ */
 export function isAdminByEmail(email: string): boolean {
   const normalized = email.trim().toLowerCase();
-  return ADMIN_EMAIL_WHITELIST.includes(normalized);
+  const list = adminEmailsFromEnv();
+  if (list.length > 0) {
+    return list.includes(normalized);
+  }
+  return normalized === "kiter";
 }
 
 export function setAdminSession(email: string) {
@@ -55,4 +72,3 @@ export function hasAdminAccess(): boolean {
   const session = getAdminSession();
   return Boolean(token && session && isAdminByEmail(session.email));
 }
-

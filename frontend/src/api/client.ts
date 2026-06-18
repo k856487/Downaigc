@@ -1,3 +1,5 @@
+import { stashPostLoginRedirect } from "../utils/sessionRedirectStorage";
+
 export type ApiError = {
   status: number;
   detail?: string;
@@ -6,6 +8,9 @@ export type ApiError = {
 const TOKEN_KEY = "paper-polish.accessToken.v1";
 const API_BASE_FALLBACK = "http://localhost:8000";
 const BANNED_POPUP_FLAG = "paper-polish.banned-popup.v1";
+
+/** 登录/登出后派发，供 RewardProvider 等按账号重新拉取状态 */
+export const AUTH_CHANGED_EVENT = "paper-polish-auth-changed";
 
 export function getAccessToken(): string | null {
   try {
@@ -22,13 +27,18 @@ export function setAccessToken(token: string | null) {
   } catch {
     // ignore
   }
+  try {
+    window.dispatchEvent(new Event(AUTH_CHANGED_EVENT));
+  } catch {
+    // ignore
+  }
 }
 
 export function clearAccessToken() {
   setAccessToken(null);
 }
 
-function getApiBase(): string {
+export function getApiBase(): string {
   const envBase = import.meta.env.VITE_API_BASE as string | undefined;
   return envBase && envBase.trim().length > 0 ? envBase : API_BASE_FALLBACK;
 }
@@ -37,6 +47,18 @@ function buildUrl(path: string): string {
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
   const base = getApiBase().replace(/\/+$/, "");
   return `${base}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
+function redirectToLoginAfterAuthLoss() {
+  try {
+    const path = window.location.pathname + (window.location.search || "");
+    if (path.startsWith("/admin")) stashPostLoginRedirect(path);
+  } catch {
+    /* ignore */
+  }
+  if (window.location.pathname !== "/login") {
+    window.location.assign("/login");
+  }
 }
 
 export async function apiRequest<T>(
@@ -65,14 +87,7 @@ export async function apiRequest<T>(
 
   if (res.status === 401) {
     clearAccessToken();
-    const to = window.location.pathname.startsWith("/admin")
-      ? "/admin/login"
-      : "/login";
-    // 最简单的跳转方式（不依赖 react-router hooks）
-    // 如果当前已经在登录页，避免重复触发“刷新一次”
-    if (window.location.pathname !== to) {
-      window.location.assign(to);
-    }
+    redirectToLoginAfterAuthLoss();
     throw { status: 401, detail: "Unauthorized" } as ApiError;
   }
 
@@ -94,10 +109,7 @@ export async function apiRequest<T>(
       } catch {
         window.alert("账号已被管理员封禁，请联系管理员处理。");
       }
-      const to = window.location.pathname.startsWith("/admin") ? "/admin/login" : "/login";
-      if (window.location.pathname !== to) {
-        window.location.assign(to);
-      }
+      redirectToLoginAfterAuthLoss();
     }
     throw { status: 403, detail } as ApiError;
   }
@@ -139,5 +151,31 @@ export async function apiRequest<T>(
 
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+/** 反馈/回复中粘贴截图：multipart 上传，返回后端 `url`（一般为 `/static/feedback-uploads/...`）。 */
+export async function apiUploadFeedbackImage(uploadPath: string, file: File): Promise<{ url: string }> {
+  const token = getAccessToken();
+  const fd = new FormData();
+  fd.append("file", file);
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(buildUrl(uploadPath), { method: "POST", headers, body: fd });
+  if (res.status === 401) {
+    clearAccessToken();
+    redirectToLoginAfterAuthLoss();
+    throw { status: 401, detail: "Unauthorized" } as ApiError;
+  }
+  if (!res.ok) {
+    let detail: string | undefined;
+    try {
+      const data = await res.json();
+      detail = typeof data?.detail === "string" ? data.detail : undefined;
+    } catch {
+      // ignore
+    }
+    throw { status: res.status, detail } as ApiError;
+  }
+  return (await res.json()) as { url: string };
 }
 

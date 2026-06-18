@@ -1,11 +1,15 @@
 import React from "react";
 import { App, Button, Card, Form, Input, Select, Space, Table, Tag, Typography } from "antd";
 import { apiRequest } from "../api/client";
+import { FeedbackRichEditor } from "../components/FeedbackRichEditor";
+import { FeedbackContentView } from "../utils/feedbackContent";
+import { feedbackHtmlHasImage, feedbackHtmlPlainTextLen } from "../utils/feedbackHtml";
 
 type FeedbackItem = {
   id: string;
-  category: "bug" | "feature" | "experience" | "other";
+  category: "bug" | "feature" | "experience" | "other" | "membership";
   content: string;
+  adminReply?: string | null;
   contact?: string | null;
   status: "open" | "processing" | "closed";
   createdAt: string;
@@ -28,6 +32,7 @@ const FeedbackPage: React.FC = () => {
   const [form] = Form.useForm<{ category: FeedbackItem["category"]; content: string; contact?: string }>();
   const [loading, setLoading] = React.useState(false);
   const [rows, setRows] = React.useState<FeedbackItem[]>([]);
+  const [contentEditorKey, setContentEditorKey] = React.useState(0);
 
   const loadRows = React.useCallback(() => {
     setLoading(true);
@@ -48,6 +53,7 @@ const FeedbackPage: React.FC = () => {
     });
     message.success("反馈已提交，感谢你的建议");
     form.resetFields();
+    setContentEditorKey((k) => k + 1);
     loadRows();
   };
 
@@ -70,6 +76,7 @@ const FeedbackPage: React.FC = () => {
                   { value: "bug", label: "问题反馈" },
                   { value: "feature", label: "功能建议" },
                   { value: "experience", label: "体验优化" },
+                  { value: "membership", label: "咨询开通" },
                   { value: "other", label: "其他" }
                 ]}
               />
@@ -77,12 +84,25 @@ const FeedbackPage: React.FC = () => {
             <Form.Item
               label="反馈内容"
               name="content"
+              getValueFromEvent={(v: string) => v}
               rules={[
                 { required: true, message: "请填写反馈内容" },
-                { min: 8, message: "请至少输入 8 个字符" }
+                {
+                  validator: async (_, v: string) => {
+                    const html = v || "";
+                    if (feedbackHtmlPlainTextLen(html) >= 8) return;
+                    if (feedbackHtmlHasImage(html)) return;
+                    throw new Error("请至少输入 8 个字符，或在编辑区内粘贴截图（Ctrl+V）");
+                  }
+                }
               ]}
             >
-              <Input.TextArea rows={5} placeholder="请描述你的问题、建议或期望，我们会尽快处理。" />
+              <FeedbackRichEditor
+                key={contentEditorKey}
+                uploadPath="/api/feedback/upload-image"
+                minHeight={200}
+                placeholder="输入文字说明；配图时在框内 Ctrl+V 粘贴截图，图片会直接显示在输入区。"
+              />
             </Form.Item>
             <Form.Item label="联系方式（可选）" name="contact">
               <Input placeholder="邮箱 / 微信 / QQ（便于我们回访）" />
@@ -107,15 +127,26 @@ const FeedbackPage: React.FC = () => {
                 dataIndex: "category",
                 width: 110,
                 render: (v: FeedbackItem["category"]) =>
-                  ({ bug: "问题", feature: "需求", experience: "体验", other: "其他" }[v] || v)
+                  ({
+                    bug: "问题",
+                    feature: "需求",
+                    experience: "体验",
+                    membership: "咨询开通",
+                    other: "其他"
+                  }[v] || v)
               },
               {
                 title: "内容",
                 dataIndex: "content",
-                render: (v: string) => (
-                  <Typography.Paragraph ellipsis={{ rows: 2, expandable: true }} style={{ marginBottom: 0 }}>
-                    {v}
-                  </Typography.Paragraph>
+                width: 280,
+                render: (v: string) => <FeedbackContentView text={v} emptyFallback="（空）" />
+              },
+              {
+                title: "官方回复",
+                dataIndex: "adminReply",
+                width: 220,
+                render: (v: string | null | undefined) => (
+                  <FeedbackContentView text={v || ""} emptyFallback="—" />
                 )
               },
               {

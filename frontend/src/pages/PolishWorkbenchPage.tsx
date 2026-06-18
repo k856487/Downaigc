@@ -10,11 +10,16 @@ import { useParams, useSearchParams } from "react-router-dom";
 import ParagraphCompareCard from "../components/ParagraphCompareCard";
 import GalaxyButton from "../components/GalaxyButton";
 import { apiRequest } from "../api/client";
-import { countBackendWords } from "../utils/textStats";
+import { countBillingChars } from "../utils/textStats";
+import { useReward } from "../state/RewardContext";
 
 const { Sider, Content } = Layout;
 
 const FOLLOW_SCROLL_STORAGE_KEY = "workbench-follow-scroll.v1";
+/** 逐字动画目标速率（字符/秒），接近原先 ~18ms/字 */
+const TYPING_CHARS_PER_SECOND = 56;
+/** 动画期间每隔多少字刷新一次字数，降低正则计算频率 */
+const TYPING_WORDCOUNT_STEP = 12;
 
 /** 任务创建时间 → 展示用 YYYY/MM/DD（本地时区） */
 function formatTaskDateYmd(iso: string): string {
@@ -44,6 +49,34 @@ function getNextParagraphIndex(
   return sorted[i + 1].index;
 }
 
+/** 实时跟随：把「上一段」滚到视口顶端，便于阅读刚完成的改写；首段仍滚当前段 */
+function getFollowScrollTargetIdx(
+  activeIdx: number,
+  list: Array<{ index: number }>
+): number {
+  const sorted = [...list].sort((a, b) => a.index - b.index);
+  const pos = sorted.findIndex((p) => p.index === activeIdx);
+  if (pos <= 0) return activeIdx;
+  return sorted[pos - 1].index;
+}
+
+function scrollWorkbenchParagraph(
+  idx: number,
+  list: Array<{ index: number }>,
+  options?: { followPrevious?: boolean; smooth?: boolean }
+) {
+  const targetIdx =
+    options?.followPrevious === false
+      ? idx
+      : getFollowScrollTargetIdx(idx, list);
+  const behavior = options?.smooth === false ? "auto" : "smooth";
+  window.requestAnimationFrame(() => {
+    document
+      .getElementById(`workbench-paragraph-${targetIdx}`)
+      ?.scrollIntoView({ behavior, block: "start" });
+  });
+}
+
 const PolishWorkbenchPage: React.FC = () => {
   const { taskId } = useParams<{ taskId: string }>();
   const [searchParams] = useSearchParams();
@@ -70,6 +103,7 @@ const PolishWorkbenchPage: React.FC = () => {
   };
 
   const { message } = App.useApp();
+  const { refreshPointsFromServer } = useReward();
 
   const [taskMode, setTaskMode] = React.useState<"polish" | "reduce">(queryMode);
   const [paragraphs, setParagraphs] = React.useState<ParagraphUI[]>([]);
@@ -97,10 +131,15 @@ const PolishWorkbenchPage: React.FC = () => {
   const processingInFlightRef = React.useRef(false);
   /** 防止「打断后立刻新开一段」时，旧请求的 finally 误伤新请求 */
   const processEpochRef = React.useRef(0);
-  const typingTimerRef = React.useRef<number | null>(null);
+  const typingRafRef = React.useRef<number | null>(null);
+  const typingLastFrameRef = React.useRef(0);
   const typingFullTextRef = React.useRef("");
   const typingTargetIdxRef = React.useRef(0);
   const typingPosRef = React.useRef(0);
+  const typingDisplayWordCountRef = React.useRef(0);
+  const typingResultBodyRef = React.useRef<HTMLDivElement | null>(null);
+  const typingWordCountElRef = React.useRef<HTMLSpanElement | null>(null);
+  const lastFollowScrollTargetRef = React.useRef<number | null>(null);
   const abortProcessRef = React.useRef<AbortController | null>(null);
   const [typingIdx, setTypingIdx] = React.useState<number | null>(null);
   const typingIdxRef = React.useRef<number | null>(null);
@@ -128,6 +167,8 @@ const PolishWorkbenchPage: React.FC = () => {
   const [doneParagraphIdxs, setDoneParagraphIdxs] = React.useState<number[]>([]);
   const [taskTitle, setTaskTitle] = React.useState("");
   const [taskCreatedAt, setTaskCreatedAt] = React.useState<string | null>(null);
+  /** 上传时剥离 [n] 文献角标后，工作台顶部小字提示 */
+  const [citationStripNotice, setCitationStripNotice] = React.useState<string | null>(null);
   /** 生成过程中是否自动滚动到当前处理段落 */
   const [realtimeFollowScroll, setRealtimeFollowScroll] = React.useState(() => {
     try {
@@ -139,6 +180,30 @@ const PolishWorkbenchPage: React.FC = () => {
   /** 异步回调（跳过、连段）里读取最新开关，避免闭包陈旧 */
   const realtimeFollowScrollRef = React.useRef(realtimeFollowScroll);
   realtimeFollowScrollRef.current = realtimeFollowScroll;
+
+  const stopTypingAnimation = React.useCallback(() => {
+    if (typingRafRef.current !== null) {
+      window.cancelAnimationFrame(typingRafRef.current);
+      typingRafRef.current = null;
+    }
+    typingLastFrameRef.current = 0;
+  }, []);
+
+  const scrollFollowTarget = React.useCallback(
+    (activeIdx: number) => {
+      const targetIdx = getFollowScrollTargetIdx(
+        activeIdx,
+        paragraphsRef.current
+      );
+      if (lastFollowScrollTargetRef.current === targetIdx) return;
+      lastFollowScrollTargetRef.current = targetIdx;
+      scrollWorkbenchParagraph(activeIdx, paragraphsRef.current, {
+        followPrevious: true,
+        smooth: true
+      });
+    },
+    []
+  );
 
   /**
    * 降 AIGC 自动连段下一目标：若曾中止在某段（paused），优先回到该段，而不是按文档顺序取「刚完成段」的下一段。
@@ -164,7 +229,7 @@ const PolishWorkbenchPage: React.FC = () => {
   const needsInterruptBeforeManualStart = React.useCallback(
     (targetSel: number) => {
       if (abortProcessRef.current !== null) return true;
-      if (typingTimerRef.current !== null) return true;
+      if (typingRafRef.current !== null) return true;
       if (typingIdxRef.current !== null && typingIdxRef.current !== targetSel)
         return true;
       if (
@@ -204,17 +269,19 @@ const PolishWorkbenchPage: React.FC = () => {
         processingInFlightRef.current = false;
         setLoading(false);
       }
-      if (typingTimerRef.current) {
-        window.clearInterval(typingTimerRef.current);
-        typingTimerRef.current = null;
+      if (typingRafRef.current !== null) {
+        stopTypingAnimation();
       }
       setTypingPaused(false);
       setTypingIdx(null);
       setAwaitingParagraphIdx(null);
       setFollowScrollAnchorIdx(null);
       setNaturalFinishIdx(null);
+      typingResultBodyRef.current = null;
+      typingWordCountElRef.current = null;
+      lastFollowScrollTargetRef.current = null;
     },
-    [taskMode]
+    [taskMode, stopTypingAnimation]
   );
 
   React.useEffect(() => {
@@ -224,10 +291,14 @@ const PolishWorkbenchPage: React.FC = () => {
     setDoneParagraphIdxs([]);
     setFollowScrollAnchorIdx(null);
     setAwaitingParagraphIdx(null);
+    typingResultBodyRef.current = null;
+    typingWordCountElRef.current = null;
+    lastFollowScrollTargetRef.current = null;
     pausedReduceBatchParagraphIdxRef.current = null;
     suppressNextReduceChainEffectRef.current = false;
     setTaskTitle("");
     setTaskCreatedAt(null);
+    setCitationStripNotice(null);
     apiRequest<ApiTaskDetail>(`/api/tasks/${taskId}`, { method: "GET" })
       .then((res) => {
         setTaskMode(res.mode);
@@ -236,13 +307,36 @@ const PolishWorkbenchPage: React.FC = () => {
         setParagraphs(
           res.paragraphs.map((p) => ({
             ...p,
-            originalWordCount: countBackendWords(p.original)
+            originalWordCount: countBillingChars(p.original)
           }))
         );
-        const first = res.paragraphs?.[0]?.index;
-        setCurrentParagraphIdx(first ?? 1);
-        autoProcessedRef.current = false;
-        reduceAutoBatchActiveRef.current = res.mode === "reduce";
+        const first = res.paragraphs?.[0]?.index ?? 1;
+        setCurrentParagraphIdx(first);
+        // 已从列表进入「已完成」降重任务：勿再自动 /process，避免全文打字机重头播放
+        if (res.mode === "reduce" && res.status === "done") {
+          autoProcessedRef.current = true;
+          reduceAutoBatchActiveRef.current = false;
+          setDoneParagraphIdxs(res.paragraphs.map((p) => p.index));
+          setNaturalFinishIdx(first);
+        } else {
+          autoProcessedRef.current = false;
+          reduceAutoBatchActiveRef.current = res.mode === "reduce";
+        }
+        try {
+          const key = `taskCitationStrip:${taskId}`;
+          const raw = window.sessionStorage.getItem(key);
+          if (raw != null) {
+            window.sessionStorage.removeItem(key);
+            const n = parseInt(raw, 10);
+            if (!Number.isNaN(n) && n > 0) {
+              setCitationStripNotice(
+                `文中方括号文献序号（如 [1]、[2]）在改写时易产生乱码，已在上传时全部过滤，共 ${n} 处。`
+              );
+            }
+          }
+        } catch {
+          /* ignore */
+        }
       })
       .catch(() => {
         message.error("加载工作台失败，请重试");
@@ -251,7 +345,7 @@ const PolishWorkbenchPage: React.FC = () => {
   }, [taskId, message]);
 
   /**
-   * 仅「实时跟随」开启时：滚到当前生成段。
+   * 仅「实时跟随」开启时：滚到跟随锚点（默认上一段置顶，首段为当前段）。
    * typingIdx（逐字）优先；等待接口时用 awaitingParagraphIdx；中止后可用 followScrollAnchorIdx。
    */
   React.useEffect(() => {
@@ -259,20 +353,15 @@ const PolishWorkbenchPage: React.FC = () => {
     const idx =
       typingIdx ?? awaitingParagraphIdx ?? followScrollAnchorIdx;
     if (idx === null) return;
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        document
-          .getElementById(`workbench-paragraph-${idx}`)
-          ?.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
-    });
+    scrollFollowTarget(idx);
   }, [
     taskId,
     realtimeFollowScroll,
     typingIdx,
     typingPaused,
     awaitingParagraphIdx,
-    followScrollAnchorIdx
+    followScrollAnchorIdx,
+    scrollFollowTarget
   ]);
 
   const isPolish = taskMode === "polish";
@@ -319,58 +408,102 @@ const PolishWorkbenchPage: React.FC = () => {
             ? "重优化当前段"
             : "重降当前段";
 
-  const runTypingInterval = React.useCallback(() => {
-    if (typingTimerRef.current) {
-      window.clearInterval(typingTimerRef.current);
-      typingTimerRef.current = null;
+  const finishTypingAnimation = React.useCallback((idx: number, fullText: string) => {
+    stopTypingAnimation();
+    const finalWordCount = countBillingChars(fullText);
+    setParagraphs((prev) =>
+      prev.map((p) =>
+        p.index === idx
+          ? { ...p, polished: fullText, wordCount: finalWordCount }
+          : p
+      )
+    );
+    typingResultBodyRef.current = null;
+    typingWordCountElRef.current = null;
+    setTypingIdx(null);
+    setFollowScrollAnchorIdx(null);
+    setTypingPaused(false);
+    setNaturalFinishIdx(idx);
+    setDoneParagraphIdxs((prev) =>
+      prev.includes(idx) ? prev : [...prev, idx]
+    );
+    const doneCb = paragraphOnFullyDoneRef.current;
+    paragraphOnFullyDoneRef.current = null;
+    if (doneCb) {
+      queueMicrotask(() => doneCb(idx));
     }
-    const tick = () => {
+  }, [stopTypingAnimation]);
+
+  const runTypingAnimation = React.useCallback(() => {
+    stopTypingAnimation();
+    typingLastFrameRef.current = 0;
+
+    const frame = (now: number) => {
+      if (typingPausedRef.current) {
+        typingRafRef.current = null;
+        return;
+      }
+
       const full = typingFullTextRef.current;
       const idx = typingTargetIdxRef.current;
+      if (!full.length) {
+        finishTypingAnimation(idx, "");
+        return;
+      }
+
+      if (!typingLastFrameRef.current) {
+        typingLastFrameRef.current = now;
+      }
+      const elapsed = Math.max(0, now - typingLastFrameRef.current);
+      typingLastFrameRef.current = now;
+      const charsToAdd = Math.max(
+        1,
+        Math.floor((elapsed / 1000) * TYPING_CHARS_PER_SECOND)
+      );
+
       let pos = typingPosRef.current;
-      pos = Math.min(full.length, pos + 1);
+      pos = Math.min(full.length, pos + charsToAdd);
       typingPosRef.current = pos;
       const nextText = full.slice(0, pos);
-      setParagraphs((prev) =>
-        prev.map((p) =>
-          p.index === idx
-            ? { ...p, polished: nextText, wordCount: countBackendWords(nextText) }
-            : p
-        )
-      );
-      if (pos >= full.length) {
-        if (typingTimerRef.current) {
-          window.clearInterval(typingTimerRef.current);
-          typingTimerRef.current = null;
-        }
-        setTypingIdx(null);
-        setFollowScrollAnchorIdx(null);
-        setTypingPaused(false);
-        setNaturalFinishIdx(idx);
-        setDoneParagraphIdxs((prev) =>
-          prev.includes(idx) ? prev : [...prev, idx]
-        );
-        const doneCb = paragraphOnFullyDoneRef.current;
-        paragraphOnFullyDoneRef.current = null;
-        if (doneCb) {
-          queueMicrotask(() => doneCb(idx));
-        }
+
+      const shouldUpdateWordCount =
+        pos >= full.length ||
+        pos <= charsToAdd ||
+        pos % TYPING_WORDCOUNT_STEP === 0;
+      const nextWordCount = shouldUpdateWordCount
+        ? countBillingChars(nextText)
+        : typingDisplayWordCountRef.current;
+      if (shouldUpdateWordCount) {
+        typingDisplayWordCountRef.current = nextWordCount;
       }
+
+      if (typingResultBodyRef.current) {
+        typingResultBodyRef.current.textContent = nextText;
+      }
+      if (shouldUpdateWordCount && typingWordCountElRef.current) {
+        typingWordCountElRef.current.textContent = `${nextWordCount} 字`;
+      }
+
+      if (pos >= full.length) {
+        finishTypingAnimation(idx, full);
+        return;
+      }
+
+      typingRafRef.current = window.requestAnimationFrame(frame);
     };
-    typingTimerRef.current = window.setInterval(tick, 18);
-  }, []);
+
+    typingRafRef.current = window.requestAnimationFrame(frame);
+  }, [finishTypingAnimation, stopTypingAnimation]);
 
   const revealTyping = React.useCallback(
     (idx: number, fullText: string) => {
       setAwaitingParagraphIdx(null);
-      if (typingTimerRef.current) {
-        window.clearInterval(typingTimerRef.current);
-        typingTimerRef.current = null;
-      }
+      stopTypingAnimation();
       setTypingPaused(false);
       typingFullTextRef.current = fullText;
       typingTargetIdxRef.current = idx;
       typingPosRef.current = 0;
+      typingDisplayWordCountRef.current = 0;
 
       setParagraphs((prev) =>
         prev.map((p) =>
@@ -378,9 +511,17 @@ const PolishWorkbenchPage: React.FC = () => {
         )
       );
       setTypingIdx(idx);
-      runTypingInterval();
+      window.requestAnimationFrame(() => {
+        if (typingResultBodyRef.current) {
+          typingResultBodyRef.current.textContent = "";
+        }
+        if (typingWordCountElRef.current) {
+          typingWordCountElRef.current.textContent = "0 字";
+        }
+        runTypingAnimation();
+      });
     },
-    [runTypingInterval]
+    [runTypingAnimation, stopTypingAnimation]
   );
 
   const startProcessCurrentParagraph = React.useCallback(
@@ -410,6 +551,7 @@ const PolishWorkbenchPage: React.FC = () => {
       abortProcessRef.current = ac;
 
       // 思考阶段：仅标 awaiting，不把 typingIdx 当作逐字（typingIdx 仅在 revealTyping 设置）
+      lastFollowScrollTargetRef.current = null;
       setFollowScrollAnchorIdx(idx);
       setAwaitingParagraphIdx(idx);
       setParagraphs((prev) =>
@@ -420,10 +562,18 @@ const PolishWorkbenchPage: React.FC = () => {
         const res = await apiRequest<{
           paragraph: ApiTaskDetail["paragraphs"][number];
           skipped?: boolean;
+          billing?: {
+            deducted: number;
+            writableWordsRemaining?: number;
+          };
         }>(`/api/tasks/${taskId}/paragraphs/${idx}/process`, {
           method: "POST",
           signal: ac.signal
         });
+
+        if (res.billing && res.billing.deducted > 0) {
+          void refreshPointsFromServer();
+        }
 
         if (res.skipped) {
           setAwaitingParagraphIdx(null);
@@ -457,14 +607,8 @@ const PolishWorkbenchPage: React.FC = () => {
             if (nextIdx !== null) {
               setCurrentParagraphIdx(nextIdx);
               if (realtimeFollowScrollRef.current) {
-                window.requestAnimationFrame(() => {
-                  window.requestAnimationFrame(() => {
-                    const el = document.getElementById(
-                      `workbench-paragraph-${nextIdx}`
-                    );
-                    el?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  });
-                });
+                lastFollowScrollTargetRef.current = null;
+                scrollFollowTarget(nextIdx);
               }
               // 等 finally 释放 processingInFlightRef 后再启动下一段
               queueMicrotask(() => {
@@ -504,7 +648,14 @@ const PolishWorkbenchPage: React.FC = () => {
         }
       }
     },
-    [taskId, revealTyping, message, taskMode, resolveNextReduceChainIdx]
+    [
+      taskId,
+      revealTyping,
+      message,
+      taskMode,
+      resolveNextReduceChainIdx,
+      scrollFollowTarget
+    ]
   );
 
   /** reduce：某段逐字自然结束后，自动处理下一段 */
@@ -523,12 +674,8 @@ const PolishWorkbenchPage: React.FC = () => {
 
     setCurrentParagraphIdx(nextIdx);
     if (realtimeFollowScroll) {
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          const el = document.getElementById(`workbench-paragraph-${nextIdx}`);
-          el?.scrollIntoView({ behavior: "smooth", block: "start" });
-        });
-      });
+      lastFollowScrollTargetRef.current = null;
+      scrollFollowTarget(nextIdx);
     }
     queueMicrotask(() => {
       void startProcessCurrentParagraph(nextIdx);
@@ -539,7 +686,8 @@ const PolishWorkbenchPage: React.FC = () => {
     taskMode,
     startProcessCurrentParagraph,
     realtimeFollowScroll,
-    resolveNextReduceChainIdx
+    resolveNextReduceChainIdx,
+    scrollFollowTarget
   ]);
 
   /** 暂停：中止网络请求或暂停逐字；继续：仅恢复逐字；空闲：等同「重降当前段」 */
@@ -547,7 +695,7 @@ const PolishWorkbenchPage: React.FC = () => {
     if (typingPaused && typingIdx !== null) {
       const full = typingFullTextRef.current;
       if (full.length > 0 && typingPosRef.current < full.length) {
-        runTypingInterval();
+        runTypingAnimation();
         setTypingPaused(false);
         return;
       }
@@ -555,9 +703,8 @@ const PolishWorkbenchPage: React.FC = () => {
       return;
     }
 
-    if (typingTimerRef.current) {
-      window.clearInterval(typingTimerRef.current);
-      typingTimerRef.current = null;
+    if (typingRafRef.current !== null || typingIdx !== null) {
+      stopTypingAnimation();
       setTypingPaused(true);
       /* 与「思考中止」一致：记录连段断点，便于前面段重跑完后仍回到此处继续 */
       if (taskMode === "reduce" && typingIdx !== null) {
@@ -578,6 +725,8 @@ const PolishWorkbenchPage: React.FC = () => {
       processingInFlightRef.current = false;
       setLoading(false);
       setTypingIdx(null);
+      typingResultBodyRef.current = null;
+      typingWordCountElRef.current = null;
       setAwaitingParagraphIdx(null);
       setTypingPaused(false);
       setNaturalFinishIdx(null);
@@ -586,14 +735,25 @@ const PolishWorkbenchPage: React.FC = () => {
       return;
     }
 
-    // 空闲：圆钮与「重降/重优化当前段」同效，便于中止后再次开始（自然完成后圆钮已禁用不会进此分支）
+    // 空闲：圆钮开始当前段；降 AIGC 下从该段起自动连段处理后续段落
     if (taskId) {
       const sel = currentParagraphIdx;
       if (needsInterruptBeforeManualStart(sel)) {
         interruptOngoingForManualRun(sel);
       } else {
-        reduceAutoBatchActiveRef.current = false;
         pausedReduceBatchParagraphIdxRef.current = null;
+      }
+      if (taskMode === "reduce") {
+        reduceAutoBatchActiveRef.current = true;
+        setRealtimeFollowScroll(true);
+        realtimeFollowScrollRef.current = true;
+        try {
+          window.localStorage.setItem(FOLLOW_SCROLL_STORAGE_KEY, "1");
+        } catch {
+          /* ignore */
+        }
+      } else {
+        reduceAutoBatchActiveRef.current = false;
       }
       void startProcessCurrentParagraph(currentParagraphIdx);
     }
@@ -601,7 +761,8 @@ const PolishWorkbenchPage: React.FC = () => {
     typingPaused,
     typingIdx,
     awaitingParagraphIdx,
-    runTypingInterval,
+    runTypingAnimation,
+    stopTypingAnimation,
     message,
     taskId,
     taskMode,
@@ -613,12 +774,9 @@ const PolishWorkbenchPage: React.FC = () => {
 
   React.useEffect(() => {
     return () => {
-      if (typingTimerRef.current) {
-        window.clearInterval(typingTimerRef.current);
-        typingTimerRef.current = null;
-      }
+      stopTypingAnimation();
     };
-  }, []);
+  }, [stopTypingAnimation]);
 
   // reduce 任务进入工作台后：自动先处理当前段（只执行一次）
   React.useEffect(() => {
@@ -710,8 +868,18 @@ const PolishWorkbenchPage: React.FC = () => {
                 type="secondary"
                 style={{ margin: 0, fontSize: 12 }}
               >
-                当前模型：示例；界面仅用于展示「按段落{isPolish ? "优化" : "降AIGC"}」的工作台布局。
+                {`按段落调用后端处理；左侧切换段落，右侧对比原文与${
+                  isPolish ? "润色" : "降 AIGC"
+                }结果。`}
               </Typography.Paragraph>
+              {citationStripNotice ? (
+                <Typography.Text
+                  type="secondary"
+                  style={{ display: "block", marginTop: 4, fontSize: 11, lineHeight: 1.45 }}
+                >
+                  {citationStripNotice}
+                </Typography.Text>
+              ) : null}
             </div>
             <Space align="center" size={10}>
               <GalaxyButton
@@ -731,7 +899,7 @@ const PolishWorkbenchPage: React.FC = () => {
                 }
                 title={
                   realtimeFollowScroll
-                    ? "实时跟随：开启（处理/逐字时自动滚到当前段；连段切换时也会滚）。点击左侧段落列表会自动关闭"
+                    ? "实时跟随：开启（处理/逐字时滚到上一段置顶，便于对照刚完成的改写；首段滚当前段）。点击左侧段落列表会自动关闭"
                     : "实时跟随：关闭（自动处理时不滚动；左侧段落列表点击仍会定位，并自动关闭本开关）"
                 }
                 onClick={() => {
@@ -801,16 +969,8 @@ const PolishWorkbenchPage: React.FC = () => {
                         pausedReduceBatchParagraphIdxRef.current = null;
                         reduceAutoBatchActiveRef.current = true;
                         setCurrentParagraphIdx(target);
-                        window.requestAnimationFrame(() => {
-                          window.requestAnimationFrame(() => {
-                            document
-                              .getElementById(`workbench-paragraph-${target}`)
-                              ?.scrollIntoView({
-                                behavior: "smooth",
-                                block: "start"
-                              });
-                          });
-                        });
+                        lastFollowScrollTargetRef.current = null;
+                        scrollFollowTarget(target);
                         void startProcessCurrentParagraph(target);
                       }
                     });
@@ -882,9 +1042,20 @@ const PolishWorkbenchPage: React.FC = () => {
                 }
               >
                 <ParagraphCompareCard
-                  {...p}
+                  index={p.index}
+                  originalWordCount={p.originalWordCount}
+                  original={p.original}
+                  polished={p.polished}
+                  wordCount={p.wordCount}
                   mode={taskMode}
                   isAwaitingApi={awaitingParagraphIdx === p.index}
+                  isTypingReveal={typingIdx === p.index}
+                  resultBodyRef={
+                    typingIdx === p.index ? typingResultBodyRef : undefined
+                  }
+                  wordCountElRef={
+                    typingIdx === p.index ? typingWordCountElRef : undefined
+                  }
                 />
               </div>
             ))}

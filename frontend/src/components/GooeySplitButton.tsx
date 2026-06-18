@@ -1,6 +1,10 @@
 import React from "react";
+import { App } from "antd";
 import { useNavigate } from "react-router-dom";
 import { apiRequest } from "../api/client";
+import { useReward } from "../state/RewardContext";
+import { countBillingChars } from "../utils/textStats";
+import { resolveTaskCharge } from "../utils/taskBilling";
 
 const MERGE_MS = 520;
 
@@ -11,9 +15,10 @@ type GooeySplitButtonProps = {
 
 const GooeySplitButton: React.FC<GooeySplitButtonProps> = ({ rawText }) => {
   const navigate = useNavigate();
+  const { message } = App.useApp();
+  const { state: rewardState } = useReward();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = React.useState(false);
-  /** 收起过程中短时保留 goo 滤镜，让「水滴聚拢」更明显 */
   const [merging, setMerging] = React.useState(false);
   const [jellyBtn, setJellyBtn] = React.useState<1 | 2 | 3 | null>(null);
   const expandedRef = React.useRef(false);
@@ -29,16 +34,11 @@ const GooeySplitButton: React.FC<GooeySplitButtonProps> = ({ rawText }) => {
     }
   }, []);
 
-  const createMockTaskId = React.useCallback((mode: "polish" | "reduce") => {
-    // mock taskId：仅用于展示工作台路由跳转效果
-    return `mock-${mode}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-  }, []);
-
   const beginMerge = React.useCallback(() => {
     if (!expandedRef.current) return;
     setExpanded(false);
     setMerging(true);
-    window.setTimeout(() => setMerging(false), MERGE_MS);
+    window.setTimeout(() => setMerging(false), MERGE_MS + 80);
   }, []);
 
   React.useEffect(() => {
@@ -69,14 +69,36 @@ const GooeySplitButton: React.FC<GooeySplitButtonProps> = ({ rawText }) => {
     }, 800);
   };
 
-  const gooClass = expanded || merging ? " upload-gooey-container--goo" : "";
+  const gooClass = expanded || merging ? "upload-gooey-container--goo" : "";
+  const wrapperClass = expanded ? " upload-gooey-wrapper--expanded" : "";
+  const containerClass = [
+    "upload-gooey-container",
+    expanded ? "upload-gooey-container--active" : "",
+    gooClass.trim(),
+    merging ? "upload-gooey-container--merging" : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   React.useEffect(() => {
     return () => clearPendingNav();
   }, [clearPendingNav]);
 
+  /** 预估校验（实际按输出汉字数在服务端扣费） */
+  const canStartTask = React.useCallback(
+    (estimatedChars: number) => {
+      const charge = resolveTaskCharge(estimatedChars, rewardState.writableWords);
+      if (!charge.ok) {
+        message.warning(charge.message ?? "可改写字数不足");
+        return false;
+      }
+      return true;
+    },
+    [message, rewardState.writableWords]
+  );
+
   return (
-    <div className="upload-gooey-wrapper" ref={containerRef}>
+    <div className={`upload-gooey-wrapper${wrapperClass}`} ref={containerRef}>
       <svg className="upload-gooey-svg-filters" aria-hidden="true" focusable="false">
         <defs>
           <filter id="uploadGooFilter" colorInterpolationFilters="sRGB">
@@ -92,33 +114,46 @@ const GooeySplitButton: React.FC<GooeySplitButtonProps> = ({ rawText }) => {
         </defs>
       </svg>
 
-      <div
-        className={`upload-gooey-container${expanded ? " upload-gooey-container--active" : ""}${gooClass}`}
-      >
+      <div className={containerClass}>
         <button
           type="button"
           className={`upload-gooey-btn upload-gooey-sub upload-gooey-sub-1 ${jellyBtn === 1 ? "upload-gooey-jelly" : ""}`}
           onClick={(e) => {
             e.stopPropagation();
             clearPendingNav();
+            const estimated = countBillingChars((rawText ?? "").trim());
+            if (!canStartTask(estimated)) return;
             runJelly(1, "polish");
 
             const payload: any = { mode: "polish" };
             if (rawText && rawText.trim().length > 0) payload.raw_text = rawText;
 
-            const createTaskPromise = apiRequest<{ taskId: string }>("/api/tasks", {
+            const createTaskPromise = apiRequest<{
+              taskId: string;
+              citationsRemoved?: number;
+            }>("/api/tasks", {
               method: "POST",
               json: payload
             });
 
-            // 让动画先播放，再跳转到段落工作台（主题=优化）
             pendingNavTimerRef.current = window.setTimeout(() => {
               createTaskPromise
                 .then((res) => {
+                  const n = res.citationsRemoved ?? 0;
+                  if (n > 0) {
+                    try {
+                      window.sessionStorage.setItem(
+                        `taskCitationStrip:${res.taskId}`,
+                        String(n)
+                      );
+                    } catch {
+                      /* ignore */
+                    }
+                  }
                   navigate(`/console/polish/${res.taskId}?mode=polish`);
                 })
                 .catch(() => {
-                  // apiRequest 内部会处理 401 跳转
+                  /* apiRequest 内部会处理 401 跳转 */
                 });
             }, 820);
           }}
@@ -131,24 +166,39 @@ const GooeySplitButton: React.FC<GooeySplitButtonProps> = ({ rawText }) => {
           onClick={(e) => {
             e.stopPropagation();
             clearPendingNav();
+            const estimated = countBillingChars((rawText ?? "").trim());
+            if (!canStartTask(estimated)) return;
             runJelly(2, "reduce");
 
             const payload: any = { mode: "reduce" };
             if (rawText && rawText.trim().length > 0) payload.raw_text = rawText;
 
-            const createTaskPromise = apiRequest<{ taskId: string }>("/api/tasks", {
+            const createTaskPromise = apiRequest<{
+              taskId: string;
+              citationsRemoved?: number;
+            }>("/api/tasks", {
               method: "POST",
               json: payload
             });
 
-            // 让动画先播放，再跳转到段落工作台
             pendingNavTimerRef.current = window.setTimeout(() => {
               createTaskPromise
                 .then((res) => {
+                  const n = res.citationsRemoved ?? 0;
+                  if (n > 0) {
+                    try {
+                      window.sessionStorage.setItem(
+                        `taskCitationStrip:${res.taskId}`,
+                        String(n)
+                      );
+                    } catch {
+                      /* ignore */
+                    }
+                  }
                   navigate(`/console/polish/${res.taskId}?mode=reduce`);
                 })
                 .catch(() => {
-                  // apiRequest 内部会处理 401 跳转
+                  /* apiRequest 内部会处理 401 跳转 */
                 });
             }, 820);
           }}

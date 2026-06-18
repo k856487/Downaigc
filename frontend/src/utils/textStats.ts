@@ -1,4 +1,4 @@
-/** 论文字数统计：中文按字，英文按词（粗略） */
+/** 论文字数统计：中文按字，英文按词（预览/展示用） */
 export function countThesisWords(text: string): number {
   const t = text.trim();
   if (!t) return 0;
@@ -11,14 +11,21 @@ export function countThesisWords(text: string): number {
   return cn + enWords;
 }
 
-/** 与后端 `count_words()` 保持一致的粗略计数口径：
- *  - 英数字连续串按 1 个
- *  - 中文按单字
- */
-export function countBackendWords(text: string): number {
+/** 计费口径（与后端 count_words 一致）：仅统计汉字，1 字 = 1 汉字 */
+export function countBillingChars(text: string): number {
   const t = text ?? "";
-  const matches = t.match(/[A-Za-z0-9]+|[\u4e00-\u9fff]/g);
+  const matches = t.match(/[\u4e00-\u9fff]/g);
   return matches ? matches.length : 0;
+}
+
+/** @deprecated 使用 countBillingChars */
+export function countBackendWords(text: string): number {
+  return countBillingChars(text);
+}
+
+/** 创建任务预估扣费：按输入汉字数粗估（实际按输出扣费） */
+export function pointsForTaskSubmission(rawText: string | undefined | null): number {
+  return countBillingChars(rawText ?? "");
 }
 
 export function truncatePreview(text: string, max = 6000): string {
